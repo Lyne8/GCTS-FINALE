@@ -2,7 +2,7 @@
 
 ## Confirmed direction
 
-- **Client:** Expo, React Native, and Expo Router; mobile-first Android/iOS with web support for admin workflows.
+- **Client:** Expo, React Native, and Expo Router; mobile-first Android/iOS with web support for operational and resident workflows.
 - **Backend:** Firebase Authentication and Cloud Firestore using the modular Firebase JavaScript SDK.
 - **Trusted server work:** add Cloud Functions only when a workflow needs server authority or is otherwise justified.
 - **Initial data source:** fixtures/simulation for bin readings and vehicle positions; no IoT hardware integration in the first software phase.
@@ -64,9 +64,18 @@ Keep a feature's UI, domain rules, and data mapping close enough to change toget
 
 Firestore listeners may provide updates to screens that need them, but do not subscribe indiscriminately to every collection. Keep queries bounded, unsubscribe on teardown, and make offline/stale status visible where it affects operational decisions. Store timestamps consistently and distinguish the event time from the time the app received or processed data when both are needed.
 
+## Current preview implementation
+
+- The role selector, resident reports, and report status transitions are held in the in-memory `DemoRoleProvider`; reloads clear them. This is demo state, not an auth/session implementation or a persistence layer.
+- Settings selections currently live in the Settings screen and reset when it unmounts. Persist preferences only after deciding which are user-level versus device/workspace-level.
+- The notification panel is a small illustrative activity list. It is not connected to the report queue, alert lifecycle, a notification repository, or push delivery.
+- Responsive web layout selection uses a client-side width hook with a stable server/initial render, so desktop navigation activates after hydration without a responsive-class mismatch.
+- Keep each preview behavior visibly honest while avoiding warning banners. `preview`/`demo` labels on example operations are preferable to claiming simulated values are live.
+
 ## Mobile and web
 
-- Ship one application for administrators, supervisors, and collectors. Use the authenticated user's role to select the relevant routes and actions; do not fork into three independently maintained apps.
+- Ship one application for administrators, supervisors, collectors, and residents. Use the authenticated user's role to select the relevant routes and actions; do not fork into separate apps.
+- Make approved public resident information readable without authentication. Require authentication for submitting and tracking personal reports; enforce ownership in Security Rules.
 - Keep shared domain and data workflows common. Use role-specific screen compositions or navigation only where tasks differ.
 - Treat client role-aware navigation as UX, not authorization; enforce record access in Firestore Security Rules or trusted code.
 - Favor touch-friendly, readable mobile layouts for field use.

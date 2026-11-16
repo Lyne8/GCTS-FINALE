@@ -13,12 +13,16 @@ This is a starting domain model for review, not a deployed schema. Prefer stable
 | `routes/{routeId}` | A planned/assigned collection run | `divisionId`, `vehicleId`, `collectorUid`, `status`, ordered `stops`, `scheduledAt`, `startedAt`, `completedAt` |
 | `collectionEvents/{eventId}` | Immutable record of a collection action | `routeId`, `binId`, `vehicleId`, `collectorUid`, `collectedAt`, `fillLevelBefore`, optional `fillLevelAfter`, `source` |
 | `alerts/{alertId}` | Operational exceptions and acknowledgement | `binId`, `type`, `severity`, `status`, `thresholdPercent`, `createdAt`, `acknowledgedBy`, `acknowledgedAt` |
+| `serviceReports/{reportId}` | Resident-submitted overflow or missed-collection reports | `residentUid`, `type`, `location` or `binId`, `details`, `status`, `createdAt`, `updatedAt` |
+| `serviceNotices/{noticeId}` | Official public service announcements | `title`, `body`, `divisionIds`, `publishedAt`, `expiresAt`, `publishedBy`, `isPublished` |
+| `collectionSchedules/{scheduleId}` | Approved public collection schedule information | `divisionId`, `serviceDays`, `serviceWindow`, `effectiveFrom`, `effectiveUntil`, `isPublished`, `updatedAt` |
 
 Use timestamps in a consistent UTC-compatible representation. Use stable IDs rather than document order. Validate latitude/longitude ranges, fill level (0–100), role values, status transitions, and references at application boundaries and in Security Rules where practical.
 
 ## Candidate enums and semantics
 
-- **User roles:** `admin`, `supervisor`, `collector` (pending stakeholder confirmation).
+- **User roles:** `admin`, `supervisor`, `collector`, `resident` (detailed permissions pending stakeholder confirmation).
+- **Resident access:** public published schedules/notices and approved public bin data may be read without sign-in; submitting/tracking a personal report requires an authenticated resident account.
 - **Bin operational status:** `active`, `maintenance`, `inactive`; keep this separate from fill-level urgency.
 - **Route status:** `draft`, `assigned`, `in_progress`, `completed`, `cancelled`.
 - **Alert status:** `open`, `acknowledged`, `resolved`.
@@ -42,6 +46,7 @@ Start Firestore Security Rules from deny-by-default. The proposed roles imply di
 - Collectors should only access assigned operational work and submit permitted progress events.
 - Supervisors should manage operational records for authorized divisions.
 - Administrators may manage user access and city-level reference data.
+- Residents should only create reports for their own account and read their own report status; public reads should be limited to explicitly published/approved service data.
 
 Never let a client assign its own role or grant itself broader access. UI visibility is not authorization. Test both allowed and denied access for each role and record type.
 

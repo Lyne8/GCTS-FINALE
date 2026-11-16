@@ -1,0 +1,221 @@
+import { useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+
+import { AppPage } from '@/features/gcts/components/app-page';
+import { GctsIcon } from '@/features/gcts/components/gcts-icon';
+import { palette } from '@/features/gcts/palette';
+
+const divisions = ['All divisions', 'Central Division', 'North Division'];
+
+export function SettingsScreen() {
+  const [selectedDivision, setSelectedDivision] = useState(divisions[0]);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState(true);
+
+  return (
+    <AppPage
+      eyebrow="PREFERENCES"
+      title="Settings"
+      subtitle="Set up your GCTS workspace the way you work.">
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Workspace</Text>
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Default division</Text>
+          <View style={styles.options}>
+            {divisions.map((division) => {
+              const selected = division === selectedDivision;
+              return (
+                <Pressable
+                  key={division}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => setSelectedDivision(division)}
+                  style={[styles.option, selected && styles.optionSelected]}>
+                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                    {division}
+                  </Text>
+                  {selected && <GctsIcon name="available" size={16} color={palette.forest} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Notifications</Text>
+        <View style={styles.card}>
+          <SettingSwitch
+            title="Push notifications"
+            subtitle="Receive collection and service updates"
+            value={notificationsEnabled}
+            onValueChange={setNotificationsEnabled}
+          />
+          <View style={styles.divider} />
+          <SettingSwitch
+            title="Priority alerts"
+            subtitle="Be notified when a bin needs attention"
+            value={priorityAlertsEnabled}
+            onValueChange={setPriorityAlertsEnabled}
+            disabled={!notificationsEnabled}
+          />
+        </View>
+      </View>
+
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Account</Text>
+        <View style={styles.card}>
+          <View style={styles.accountRow}>
+            <View style={styles.accountIcon}>
+              <GctsIcon name="person" size={20} color={palette.forest} />
+            </View>
+            <View style={styles.accountCopy}>
+              <Text style={styles.accountName}>GCTS user</Text>
+              <Text style={styles.accountRole}>City operations</Text>
+            </View>
+            <GctsIcon name="chevron" size={16} color={palette.muted} />
+          </View>
+        </View>
+      </View>
+    </AppPage>
+  );
+}
+
+function SettingSwitch({
+  title,
+  subtitle,
+  value,
+  onValueChange,
+  disabled = false,
+}: {
+  title: string;
+  subtitle: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={[styles.switchRow, disabled && styles.disabled]}>
+      <View style={styles.switchCopy}>
+        <Text style={styles.switchTitle}>{title}</Text>
+        <Text style={styles.switchSubtitle}>{subtitle}</Text>
+      </View>
+      <Switch
+        accessibilityLabel={title}
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ false: '#D9E1DB', true: '#8DB6A0' }}
+        thumbColor={value ? palette.forest : '#FFFFFF'}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  group: {
+    marginBottom: 22,
+  },
+  groupTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  card: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 17,
+    backgroundColor: palette.white,
+  },
+  fieldLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 7,
+    marginBottom: 10,
+  },
+  options: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  option: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 22,
+  },
+  optionSelected: {
+    borderColor: palette.forestLight,
+    backgroundColor: palette.mint,
+  },
+  optionText: {
+    color: palette.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  optionTextSelected: {
+    color: palette.forest,
+  },
+  switchRow: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  switchCopy: {
+    flex: 1,
+  },
+  switchTitle: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  switchSubtitle: {
+    color: palette.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: palette.border,
+  },
+  disabled: {
+    opacity: 0.45,
+  },
+  accountRow: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  accountIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: palette.mint,
+  },
+  accountCopy: {
+    flex: 1,
+  },
+  accountName: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  accountRole: {
+    color: palette.muted,
+    fontSize: 10,
+    marginTop: 3,
+  },
+});

@@ -1,0 +1,17 @@
+export const palette = {
+  forest: '#173F35',
+  forestLight: '#245B4B',
+  mint: '#E5F1E9',
+  mintStrong: '#CDE5D5',
+  canvas: '#F6F8F5',
+  white: '#FFFFFF',
+  ink: '#1C2823',
+  muted: '#718078',
+  border: '#E4EAE5',
+  amber: '#A96812',
+  amberSoft: '#FFF2D8',
+  red: '#B5443B',
+  redSoft: '#FCE9E6',
+  green: '#27724E',
+  greenSoft: '#E5F3EA',
+} as const;

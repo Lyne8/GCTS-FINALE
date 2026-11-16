@@ -1,6 +1,6 @@
 # GCTS — Fort Portal Tourism City
 
-GCTS is a mobile-first software prototype for monitoring waste-bin status and supporting garbage collection operations in Fort Portal Tourism City. The current repository is an Expo / React Native starter; Firebase integration and product workflows are planned next. IoT hardware is outside the initial software implementation scope, so early demos must use clearly labeled simulated data.
+GCTS is a mobile-first software prototype for residents and waste-collection teams in Fort Portal Tourism City. It is one Expo / React Native app with role-aware experiences and responsive web support for city administrators. The UI includes an overview, bins, routes, resident reporting, an admin report queue, settings, and a lightweight notification panel. Operational records and resident reports are local preview state; preferences are screen-local, notifications are illustrative, and Firebase integration is not yet implemented. IoT hardware is outside the initial software implementation scope.
 
 ## Project guidance
 
