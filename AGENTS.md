@@ -39,3 +39,15 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## GCTS Project Guidance
+
+- This repository is the software prototype for the Garbage Collection Tracker System (GCTS) pilot in Fort Portal Tourism City. The initial software scope is Firebase and the Expo mobile app; do not build or assume IoT hardware integration is available.
+- Treat proposal claims, prototype content, and targets as unverified until their source and measurement method are confirmed. See [docs/DECISIONS.md](docs/DECISIONS.md) for known open questions.
+- Prefer functional core / imperative shell: keep domain calculations and state transitions pure where practical; isolate React, navigation, Firebase, location, and other side effects at clear boundaries.
+- Organize product code by feature and responsibility. Keep Expo Router route files in `src/app/`; keep reusable UI, domain logic, and data access outside route files. Avoid both monolithic screens and abstractions that have no real reuse.
+- UI components must not access Firebase directly. Put Firebase SDK calls behind typed repositories/adapters, map and validate data at the boundary, and expose explicit loading, empty, and error states.
+- Enforce authorization in Firebase Security Rules and trusted server code, not only by hiding UI. Never ship service-account credentials or other server secrets in the mobile/web client.
+- Keep demo/simulated readings clearly distinguished from real sensor or GPS data. Do not describe simulated data as live telemetry.
+- Follow the scoped instructions in `.github/instructions/` for Expo/React Native work and Firebase work. Product scope, architecture, data model, and delivery order are documented in `docs/`.
+- Use `pnpm` for project scripts because this repository has a `pnpm-lock.yaml`. Run `pnpm lint` and `pnpm exec tsc --noEmit` for changes that affect application code. A test runner is not configured yet; do not claim tests ran when they did not.
