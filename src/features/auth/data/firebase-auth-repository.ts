@@ -9,6 +9,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   InvalidRoleClaimsError,
   resolveAuthPrincipal,
@@ -20,6 +21,7 @@ import {
   connectFirebaseAuthEmulatorIfConfigured,
   FirebaseConfigurationError,
   getFirebaseApp,
+  getFirebaseFirestore,
 } from '@/services/firebase/firebase';
 import { getPlatformFirebaseAuth } from '@/services/firebase/auth-platform';
 
@@ -135,6 +137,58 @@ export async function signOutCurrentUser(): Promise<void> {
   }
 }
 
+async function resolvePrincipalWithProfile(
+  user: User,
+  claims: Record<string, unknown>
+): Promise<AuthPrincipal> {
+  if (
+    claims.role === 'admin' ||
+    claims.role === 'supervisor' ||
+    claims.role === 'collector'
+  ) {
+    return resolveAuthPrincipal(
+      user.uid,
+      user.email,
+      user.emailVerified,
+      claims
+    );
+  }
+
+  try {
+    const firestore = getFirebaseFirestore();
+    let profileSnap = await getDoc(doc(firestore, 'staffProfiles', user.uid));
+    if (!profileSnap.exists() && user.email) {
+      profileSnap = await getDoc(doc(firestore, 'staffProfiles', user.email.toLowerCase().trim()));
+    }
+
+    if (profileSnap.exists()) {
+      const data = profileSnap.data();
+      const rawRole = (data.role ?? data.Role ?? '').toString().trim().toLowerCase();
+      if (rawRole === 'admin' || rawRole === 'supervisor' || rawRole === 'collector') {
+        const divisionIds = Array.isArray(data.divisionIds)
+          ? data.divisionIds.filter((id): id is string => typeof id === 'string')
+          : [];
+        return {
+          uid: user.uid,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          role: rawRole,
+          divisionIds,
+        };
+      }
+    }
+  } catch {
+    // If offline or profile read fails, fall through to default claims resolution
+  }
+
+  return resolveAuthPrincipal(
+    user.uid,
+    user.email,
+    user.emailVerified,
+    claims
+  );
+}
+
 export async function refreshCurrentUserSession(): Promise<AuthSessionState> {
   try {
     const user = getAuth().currentUser;
@@ -144,14 +198,10 @@ export async function refreshCurrentUserSession(): Promise<AuthSessionState> {
 
     await reload(user);
     const token = await user.getIdTokenResult(true);
+    const principal = await resolvePrincipalWithProfile(user, token.claims);
     return {
       status: 'signed-in',
-      principal: resolveAuthPrincipal(
-        user.uid,
-        user.email,
-        user.emailVerified,
-        token.claims
-      ),
+      principal,
     };
   } catch (error) {
     throw new AuthOperationError(mapAuthFailure(error));
@@ -173,12 +223,7 @@ async function publishUserState(
 
   try {
     const token = await user.getIdTokenResult();
-    const principal: AuthPrincipal = resolveAuthPrincipal(
-      user.uid,
-      user.email,
-      user.emailVerified,
-      token.claims
-    );
+    const principal = await resolvePrincipalWithProfile(user, token.claims);
     if (active) {
       onStateChange({ status: 'signed-in', principal });
     }

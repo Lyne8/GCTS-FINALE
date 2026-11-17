@@ -61,12 +61,30 @@ beforeEach(async () => {
       updatedAt: now,
     });
     await setDoc(doc(db, 'routes/central-assigned'), {
+      code: 'GCTS-R01',
+      name: 'Central Market Loop',
       divisionId: 'central',
+      vehicleId: 'truck-fp-03',
       collectorUid: 'collector-1',
+      status: 'assigned',
+      stops: [
+        { binId: 'central-bin', name: 'Central Market', status: 'pending' },
+      ],
+      createdAt: now,
+      updatedAt: now,
     });
     await setDoc(doc(db, 'routes/north-unassigned'), {
+      code: 'GCTS-R02',
+      name: 'North Loop',
       divisionId: 'north',
+      vehicleId: 'truck-fp-01',
       collectorUid: 'collector-2',
+      status: 'assigned',
+      stops: [
+        { binId: 'north-bin', name: 'North Market', status: 'pending' },
+      ],
+      createdAt: now,
+      updatedAt: now,
     });
     await setDoc(doc(db, 'bins/central-bin'), {
       name: 'Central Market',
@@ -83,6 +101,17 @@ beforeEach(async () => {
       divisionId: 'north',
       installationStatus: 'planned',
       reportingEnabled: false,
+    });
+    await setDoc(doc(db, 'staffProfiles/collector-1'), {
+      displayName: 'John Mugisha',
+      email: 'john@gcts.org',
+      role: 'collector',
+    });
+    await setDoc(doc(db, 'staffProfiles/supervisor-1'), {
+      displayName: 'Sarah Supervisor',
+      email: 'supervisor@gcts.org',
+      role: 'supervisor',
+      divisionIds: ['central'],
     });
   });
 });
@@ -347,19 +376,264 @@ test('collectors can read only routes explicitly assigned to them', async () => 
   );
 });
 
-test('supervisors are division-scoped on route reads and cannot write routes yet', async () => {
-  const db = testEnv.authenticatedContext('supervisor-1', {
+test('supervisors can create and assign routes in their assigned divisions', async () => {
+  const supervisorDb = testEnv.authenticatedContext('supervisor-1', {
     role: 'supervisor',
     divisionIds: ['central'],
   }).firestore();
+  const adminDb = testEnv.authenticatedContext('admin-1', {
+    role: 'admin',
+  }).firestore();
 
-  await assertSucceeds(getDoc(doc(db, 'routes/central-assigned')));
-  await assertFails(getDoc(doc(db, 'routes/north-unassigned')));
-  await assertFails(
-    updateDoc(doc(db, 'routes/central-assigned'), {
-      collectorUid: 'collector-3',
+  await assertSucceeds(getDoc(doc(supervisorDb, 'routes/central-assigned')));
+  await assertFails(getDoc(doc(supervisorDb, 'routes/north-unassigned')));
+
+  // Supervisor can create route in central division
+  await assertSucceeds(
+    setDoc(doc(supervisorDb, 'routes/new-central-route'), {
+      code: 'GCTS-R03',
+      name: 'Central Expansion',
+      divisionId: 'central',
+      vehicleId: 'truck-fp-03',
+      status: 'draft',
+      stops: [{ binId: 'central-bin', name: 'Central Market', status: 'pending' }],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     })
   );
+
+  // Supervisor cannot create route outside assigned division
+  await assertFails(
+    setDoc(doc(supervisorDb, 'routes/new-north-route'), {
+      code: 'GCTS-R04',
+      name: 'North Expansion',
+      divisionId: 'north',
+      vehicleId: 'truck-fp-01',
+      status: 'draft',
+      stops: [{ binId: 'north-bin', name: 'North Market', status: 'pending' }],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Supervisor can assign collector in their division
+  await assertSucceeds(
+    updateDoc(doc(supervisorDb, 'routes/central-assigned'), {
+      collectorUid: 'collector-3',
+      status: 'assigned',
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Supervisor cannot update route in north division
+  await assertFails(
+    updateDoc(doc(supervisorDb, 'routes/north-unassigned'), {
+      collectorUid: 'collector-3',
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Admin can update routes in any division
+  await assertSucceeds(
+    updateDoc(doc(adminDb, 'routes/north-unassigned'), {
+      collectorUid: 'collector-2',
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('collectors can update status and stops on assigned routes but cannot reassign', async () => {
+  const collectorDb = testEnv.authenticatedContext('collector-1', {
+    role: 'collector',
+  }).firestore();
+
+  // Collector can transition assigned -> in_progress
+  await assertSucceeds(
+    updateDoc(doc(collectorDb, 'routes/central-assigned'), {
+      status: 'in_progress',
+      startedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Collector can record stop progress
+  await assertSucceeds(
+    updateDoc(doc(collectorDb, 'routes/central-assigned'), {
+      stops: [
+        {
+          binId: 'central-bin',
+          name: 'Central Market',
+          status: 'collected',
+          collectedAt: Timestamp.now(),
+        },
+      ],
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Collector cannot reassign collectorUid or divisionId
+  await assertFails(
+    updateDoc(doc(collectorDb, 'routes/central-assigned'), {
+      collectorUid: 'collector-2',
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(collectorDb, 'routes/central-assigned'), {
+      divisionId: 'north',
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Collector cannot update a route assigned to another collector
+  await assertFails(
+    updateDoc(doc(collectorDb, 'routes/north-unassigned'), {
+      status: 'in_progress',
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('collectors can create auditable collection events for their assigned route', async () => {
+  const collectorDb = testEnv.authenticatedContext('collector-1', {
+    role: 'collector',
+  }).firestore();
+  const eventRef = doc(collectorDb, 'collectionEvents/event-1');
+
+  // Valid collection event
+  await assertSucceeds(
+    setDoc(eventRef, {
+      routeId: 'central-assigned',
+      binId: 'central-bin',
+      divisionId: 'central',
+      vehicleId: 'truck-fp-03',
+      collectorUid: 'collector-1',
+      outcome: 'collected',
+      source: 'manual',
+      collectedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  // Collector cannot spoof another collector's UID
+  await assertFails(
+    setDoc(doc(collectorDb, 'collectionEvents/event-spoofed'), {
+      routeId: 'central-assigned',
+      binId: 'central-bin',
+      divisionId: 'central',
+      vehicleId: 'truck-fp-03',
+      collectorUid: 'collector-2',
+      outcome: 'collected',
+      source: 'manual',
+      collectedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  // Collection events are immutable: cannot update or delete
+  await assertFails(
+    updateDoc(eventRef, {
+      outcome: 'skipped',
+    })
+  );
+  await assertFails(deleteDoc(eventRef));
+
+  // Residents cannot read or create collection events
+  const residentDb = residentContext().firestore();
+  await assertFails(getDoc(doc(residentDb, 'collectionEvents/event-1')));
+  await assertFails(
+    setDoc(doc(residentDb, 'collectionEvents/resident-event'), {
+      routeId: 'central-assigned',
+      binId: 'central-bin',
+      divisionId: 'central',
+      vehicleId: 'truck-fp-03',
+      collectorUid: 'resident-1',
+      outcome: 'collected',
+      source: 'manual',
+      collectedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test('staff profiles are readable by staff, writable only by admin, and denied to residents', async () => {
+  const adminDb = testEnv.authenticatedContext('admin-1', { role: 'admin' }).firestore();
+  const supervisorDb = testEnv
+    .authenticatedContext('supervisor-1', { role: 'supervisor', divisionIds: ['central'] })
+    .firestore();
+  const collectorDb = testEnv
+    .authenticatedContext('collector-1', { role: 'collector' })
+    .firestore();
+  const residentDb = residentContext().firestore();
+  const anonDb = testEnv.unauthenticatedContext().firestore();
+
+  // Admin can read and write staff profiles
+  await assertSucceeds(getDoc(doc(adminDb, 'staffProfiles/collector-1')));
+  await assertSucceeds(
+    setDoc(doc(adminDb, 'staffProfiles/collector-2'), {
+      displayName: 'Sarah Atuhaire',
+      email: 'sarah@gcts.org',
+      role: 'collector',
+    })
+  );
+
+  // Supervisor can read, but cannot write
+  await assertSucceeds(getDoc(doc(supervisorDb, 'staffProfiles/collector-1')));
+  await assertFails(
+    setDoc(doc(supervisorDb, 'staffProfiles/collector-3'), {
+      displayName: 'Unauthorized Collector',
+      email: 'unauth@gcts.org',
+      role: 'collector',
+    })
+  );
+
+  // Collector can read, but cannot write
+  await assertSucceeds(getDoc(doc(collectorDb, 'staffProfiles/collector-1')));
+  await assertFails(
+    setDoc(doc(collectorDb, 'staffProfiles/collector-1'), {
+      displayName: 'Tampered Name',
+      email: 'tampered@gcts.org',
+      role: 'collector',
+    })
+  );
+
+  // Residents and anonymous cannot read or write staff profiles
+  await assertFails(getDoc(doc(residentDb, 'staffProfiles/collector-1')));
+  await assertFails(
+    setDoc(doc(residentDb, 'staffProfiles/collector-resident'), {
+      displayName: 'Resident Attacker',
+      email: 'attacker@gmail.com',
+      role: 'collector',
+    })
+  );
+  await assertFails(getDoc(doc(anonDb, 'staffProfiles/collector-1')));
+  await assertFails(
+    setDoc(doc(anonDb, 'staffProfiles/collector-anon'), {
+      displayName: 'Anon Attacker',
+      email: 'anon@gmail.com',
+      role: 'collector',
+    })
+  );
+});
+
+test('staff roles assigned via staffProfiles document are recognized without custom claims', async () => {
+  // Bare context without custom claims (role is in staffProfiles in Firestore)
+  const collectorDb = testEnv.authenticatedContext('collector-1').firestore();
+  const supervisorDb = testEnv.authenticatedContext('supervisor-1').firestore();
+
+  // Collector can read their assigned route
+  await assertSucceeds(getDoc(doc(collectorDb, 'routes/central-assigned')));
+  // Collector cannot read unassigned or other collector routes
+  await assertFails(getDoc(doc(collectorDb, 'routes/north-unassigned')));
+
+  // Supervisor can read reports in their assigned division (central)
+  await assertSucceeds(getDoc(doc(supervisorDb, 'serviceReports/central-report')));
+  // Supervisor cannot access reports in other divisions (north)
+  await assertFails(getDoc(doc(supervisorDb, 'serviceReports/north-report')));
+
+  // Both can read staff profiles
+  await assertSucceeds(getDoc(doc(collectorDb, 'staffProfiles/collector-1')));
+  await assertSucceeds(getDoc(doc(supervisorDb, 'staffProfiles/supervisor-1')));
 });
 
 test('unrecognized collections remain denied by default', async () => {

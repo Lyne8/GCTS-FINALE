@@ -32,7 +32,33 @@ Use timestamps in a consistent UTC-compatible representation. Use stable IDs rat
 
 ## Collection event behavior
 
-Treat collection events as history rather than overwriting them. A successful collection should record who/what route serviced which bin and when, then update the bin's current operational snapshot in a consistent, authorized workflow. Decide whether this requires a transaction or trusted server operation when the write flow is implemented. Do not infer successful collection only from a route stop being opened.
+Treat collection events as history rather than overwriting them. A successful collection or skipped stop creates an immutable audit record in `collectionEvents/{eventId}` with `source: 'manual'`, recording who (`collectorUid`), what route (`routeId`), which bin (`binId`), which vehicle (`vehicleId`), the outcome (`collected` or `skipped`), and `collectedAt` server timestamp. Simultaneously, the route's stop status is updated in `routes/{routeId}` to reflect progress. Do not infer collection merely because a stop was opened. Security Rules enforce immutability: updates and deletes on `collectionEvents` are denied.
+
+## Implemented workflow: routes and collection progress
+
+The second operational Firebase-backed workflow covers route assignment and collection execution:
+- **Routes (`routes/{routeId}`):**
+  - Document fields: `code` (string), `name` (string), `divisionId` (string), `vehicleId` (string), `collectorUid` (string or null), `status` (`draft` | `assigned` | `in_progress` | `completed` | `cancelled`), `stops` (array of `{ binId, name, status, collectedAt, skipReason }`), `scheduledAt` (timestamp or null), `startedAt` (timestamp or null), `completedAt` (timestamp or null), `createdAt` (serverTimestamp), and `updatedAt` (serverTimestamp).
+  - Supervisors create and assign routes within their trusted division scope (`hasDivisionAccess`). Administrators manage routes city-wide.
+  - Collectors read only routes explicitly assigned to their UID (`collectorUid == request.auth.uid`). They can start the route (`assigned` → `in_progress`), record stop outcomes, and mark the route `completed`, but cannot modify route identity, division, vehicle, or reassign `collectorUid`.
+  - Residents are denied read and write access to operational collection routes.
+- **Collection Events (`collectionEvents/{eventId}`):**
+  - Document fields: `routeId`, `binId`, `divisionId`, `vehicleId`, `collectorUid`, `outcome` (`collected` | `skipped`), `source` (`manual`), `collectedAt` (serverTimestamp), and `createdAt` (serverTimestamp), with optional `fillLevelBefore`, `fillLevelAfter`, and `note`.
+  - Created by assigned collectors when servicing a stop, or by authorized supervisors/administrators.
+  - Strictly immutable (`allow update, delete: if false`).
+
+- **Staff Profiles (`staffProfiles/{docId}`):**
+  - Document fields: `displayName` (string), `email` (string), `role` (`collector` | `supervisor` | `admin`), and optional `divisionIds` (string[]).
+  - **Document ID must be the user's Auth UID or their email address** (not a Firestore Auto-ID). Security Rules look up both `staffProfiles/{uid}` and `staffProfiles/{email}` to find the profile; Auto-ID documents are invisible to rules because rules cannot query a collection.
+  - Role matching is **case-insensitive** (`Collector` and `collector` are equivalent), and both `role` and `Role` field names are accepted. The app normalizes to lowercase.
+  - Used for human-friendly display names and role-based assignment lists in the UI (replacing raw UIDs).
+  - Functions as a direct role assignment mechanism: if Firebase Auth custom claims are absent, both the mobile app client and Firestore Security Rules recognize the role and division scope from the matched staff profile.
+  - Required fields by role:
+    - `admin`: `displayName`, `email`, `role: 'admin'`. No `divisionIds` needed (admin has city-wide scope).
+    - `collector`: `displayName`, `email`, `role: 'collector'`. No `divisionIds` needed (collectors are scoped to specific assigned routes).
+    - `supervisor`: `displayName`, `email`, `role: 'supervisor'`, and `divisionIds` (e.g. `['central']`).
+  - Readable by authenticated staff (`admin`, `supervisor`, `collector`) and users reading their own profile.
+  - Writable only by `admin` (or via Firebase Console / Admin SDK). Residents and unauthenticated clients cannot read or write staff profiles.
 
 ## First workflow: resident service reports
 

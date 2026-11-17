@@ -6,10 +6,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function staffProfileDoc(docId) {
+      return /databases/$(database)/documents/staffProfiles/$(docId);
+    }
+
+    function hasStaffProfileRole(role) {
+      return isSignedIn()
+        && (
+          (exists(staffProfileDoc(request.auth.uid))
+            && (
+              get(staffProfileDoc(request.auth.uid)).data.role == role
+              || ('Role' in get(staffProfileDoc(request.auth.uid)).data
+                  && get(staffProfileDoc(request.auth.uid)).data.Role == role)
+            ))
+          || (
+            'email' in request.auth.token
+            && exists(staffProfileDoc(request.auth.token.email))
+            && (
+              get(staffProfileDoc(request.auth.token.email)).data.role == role
+              || ('Role' in get(staffProfileDoc(request.auth.token.email)).data
+                  && get(staffProfileDoc(request.auth.token.email)).data.Role == role)
+            )
+          )
+        );
+    }
+
     function hasRole(role) {
       return isSignedIn()
-        && 'role' in request.auth.token
-        && request.auth.token.role == role;
+        && (
+          ('role' in request.auth.token && request.auth.token.role == role)
+          || hasStaffProfileRole(role)
+        );
     }
 
     function isVerifiedResident() {
@@ -18,20 +45,52 @@ service cloud.firestore {
         && (
           !('role' in request.auth.token)
           || request.auth.token.role == 'resident'
-        );
+        )
+        && !hasStaffProfileRole('admin')
+        && !hasStaffProfileRole('supervisor')
+        && !hasStaffProfileRole('collector');
     }
 
     function isAdmin() {
       return hasRole('admin');
     }
 
+    function isStaff() {
+      return isAdmin()
+        || hasRole('supervisor')
+        || hasRole('collector');
+    }
+
+    function hasStaffProfileDivisionAccess(divisionId) {
+      let uidDoc = staffProfileDoc(request.auth.uid);
+      let emailDoc = 'email' in request.auth.token
+        ? staffProfileDoc(request.auth.token.email)
+        : uidDoc;
+      return (
+          exists(uidDoc)
+          && 'divisionIds' in get(uidDoc).data
+          && get(uidDoc).data.divisionIds is list
+          && divisionId in get(uidDoc).data.divisionIds
+        ) || (
+          exists(emailDoc)
+          && 'divisionIds' in get(emailDoc).data
+          && get(emailDoc).data.divisionIds is list
+          && divisionId in get(emailDoc).data.divisionIds
+        );
+    }
+
     function hasDivisionAccess(divisionId) {
       return isAdmin()
         || (
           hasRole('supervisor')
-          && 'divisionIds' in request.auth.token
-          && request.auth.token.divisionIds is list
-          && divisionId in request.auth.token.divisionIds
+          && (
+            (
+              'divisionIds' in request.auth.token
+              && request.auth.token.divisionIds is list
+              && divisionId in request.auth.token.divisionIds
+            )
+            || hasStaffProfileDivisionAccess(divisionId)
+          )
         );
     }
 
@@ -143,6 +202,98 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function canManageRoute(divisionId) {
+      return isAdmin() || hasDivisionAccess(divisionId);
+    }
+
+    function validStopsList(stops) {
+      return stops is list && stops.size() > 0 && stops.size() <= 50;
+    }
+
+    function validRouteCreate(data) {
+      return data.keys().hasAll([
+          'code',
+          'name',
+          'divisionId',
+          'vehicleId',
+          'status',
+          'stops',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.code is string
+        && data.code.size() > 0
+        && data.code.size() <= 32
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 100
+        && data.divisionId is string
+        && data.divisionId.size() > 0
+        && data.divisionId.size() <= 64
+        && data.vehicleId is string
+        && data.vehicleId.size() > 0
+        && data.vehicleId.size() <= 64
+        && data.status in ['draft', 'assigned']
+        && validStopsList(data.stops)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validCollectorRouteUpdate(current, next) {
+      return next.diff(current).affectedKeys().hasOnly([
+          'status',
+          'stops',
+          'startedAt',
+          'completedAt',
+          'updatedAt'
+        ])
+        && next.code == current.code
+        && next.name == current.name
+        && next.divisionId == current.divisionId
+        && next.vehicleId == current.vehicleId
+        && next.collectorUid == current.collectorUid
+        && next.createdAt == current.createdAt
+        && next.updatedAt == request.time
+        && validStopsList(next.stops)
+        && (
+          next.status == current.status
+          || (current.status == 'assigned' && next.status == 'in_progress')
+          || (current.status == 'in_progress' && next.status == 'completed')
+        );
+    }
+
+    function validCollectionEventCreate(data) {
+      return data.keys().hasAll([
+          'routeId',
+          'binId',
+          'divisionId',
+          'vehicleId',
+          'collectorUid',
+          'outcome',
+          'source',
+          'collectedAt',
+          'createdAt'
+        ])
+        && data.routeId is string
+        && data.routeId.size() > 0
+        && data.routeId.size() <= 128
+        && data.binId is string
+        && data.binId.size() > 0
+        && data.binId.size() <= 128
+        && data.divisionId is string
+        && data.divisionId.size() > 0
+        && data.divisionId.size() <= 64
+        && data.vehicleId is string
+        && data.vehicleId.size() > 0
+        && data.vehicleId.size() <= 64
+        && data.collectorUid is string
+        && data.collectorUid == request.auth.uid
+        && data.outcome in ['collected', 'skipped']
+        && data.source == 'manual'
+        && data.collectedAt == request.time
+        && data.createdAt == request.time;
+    }
+
     match /routes/{routeId} {
       allow get, list: if isAdmin()
         || hasDivisionAccess(resource.data.divisionId)
@@ -152,13 +303,59 @@ service cloud.firestore {
           && resource.data.collectorUid == request.auth.uid
         );
 
-      allow create, update, delete: if false;
+      allow create: if canManageRoute(request.resource.data.divisionId)
+        && validRouteCreate(request.resource.data);
+
+      allow update: if (
+          canManageRoute(resource.data.divisionId)
+          && request.resource.data.divisionId == resource.data.divisionId
+          && request.resource.data.code == resource.data.code
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+        )
+        || (
+          hasRole('collector')
+          && 'collectorUid' in resource.data
+          && resource.data.collectorUid == request.auth.uid
+          && validCollectorRouteUpdate(resource.data, request.resource.data)
+        );
+
+      allow delete: if false;
+    }
+
+    match /collectionEvents/{eventId} {
+      allow get, list: if isAdmin()
+        || hasDivisionAccess(resource.data.divisionId)
+        || (
+          hasRole('collector')
+          && 'collectorUid' in resource.data
+          && resource.data.collectorUid == request.auth.uid
+        );
+
+      allow create: if (
+          canManageRoute(request.resource.data.divisionId)
+          || hasRole('collector')
+        )
+        && validCollectionEventCreate(request.resource.data);
+
+      allow update, delete: if false;
     }
 
     match /bins/{binId} {
       allow get, list: if canReadReportableBin(resource.data);
 
       allow create, update, delete: if false;
+    }
+
+    match /staffProfiles/{docId} {
+      allow get: if isSignedIn()
+        && (
+          request.auth.uid == docId
+          || ('email' in request.auth.token && request.auth.token.email == docId)
+          || isStaff()
+        );
+      allow list: if isStaff();
+      allow write: if isAdmin();
     }
   }
 }
