@@ -25,17 +25,15 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
-firestore-debug.log
+firestore-debug.*
 
 # macOS
 .DS_Store
 *.pem
 
 # local env files
-.env
-.env.*
-!.env.example
 .env*.local
+.env
 
 # typescript
 *.tsbuildinfo
