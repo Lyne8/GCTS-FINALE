@@ -25,13 +25,13 @@ The sequence prioritizes a usable Firebase-backed app before device integration.
 
 ## Phase 2 — Bins and operational overview
 
-- Connect the current sample bin list/detail and division/status filters to a typed repository.
-- Define and expose only approved public bin location/status fields to residents.
-- Show fill level, latest update time, and data source.
+- **Implemented and owner-verified live:** connect signed-in bin lists to the typed Firestore repository, filter to `reportingEnabled == true`, validate document fields, and subscribe to realtime updates. Signed-out preview mode continues to use labeled demo fixtures.
+- **Implemented and owner-reported published:** allow verified residents to read reportable bins, supervisors to read reportable bins in their claim-scoped divisions, and admins to read reportable bins. Client bin writes and collector bin reads remain denied.
+- Keep absent sensor readings explicit; do not present planned records or simulated values as real telemetry.
 - Derive alert/urgency state from a confirmed threshold and make stale data distinct from low fill.
 - Build overview indicators from defined metrics rather than hard-coded prototype figures.
 
-**Exit:** a supervisor can find and prioritize bins, with loading/empty/error/offline states handled.
+**Exit:** the owner confirmed the live resident report flow can select a reportable bin and create/read a report; scoped bin reads and loading/empty/error/offline states are implemented. The owner reports six planned locations enabled for controlled development testing; this does not verify physical installation or sensor telemetry.
 
 ## Phase 3 — Routes and collection workflow
 
@@ -46,10 +46,10 @@ The sequence prioritizes a usable Firebase-backed app before device integration.
 
 - Implement alert lifecycle and acknowledgement according to the agreed policy.
 - Build basic reports for collections, route completion, overflow/response time, and other metrics only after definitions are agreed.
-- Add resident overflow/missed-collection report submission and status tracking, with ownership-enforced access.
+- **Implemented and owner-verified live:** resident overflow/missed-collection report submission and own-report tracking, plus admin/supervisor triage, through typed Firestore repositories with ownership/division rules. The owner confirmed resident submission/read and admin status changes after enabling the required indexes.
 - Validate usability and measurable outcomes with representative stakeholders and document limitations.
 
-**Exit:** reported metrics can be traced to stored events and their calculation is documented.
+**Exit:** owner-verified live resident report create/read and admin status transitions; report metrics remain deferred until source events and definitions are agreed.
 
 ## Phase 5 — Device integration (later)
 
@@ -63,8 +63,53 @@ The sequence prioritizes a usable Firebase-backed app before device integration.
 
 The mobile-first, role-aware UI increment is implemented for all four roles. It includes overview/bin/route screens, resident service information and report submission, an admin resident-report queue with received → under review → resolved status changes, a basic settings screen, a notification panel, a responsive web admin sidebar, and compact mobile navigation.
 
-All of these remain prototype interactions. The demo provider stores role selection and reports in memory; settings are screen-local; notification entries are illustrative; no Authentication, Firestore persistence, push delivery, verified schedules, or live sensor/GPS data is connected. The preview role selector is not a security boundary. The worktree also contains earlier project scaffold/documentation changes; preserve work already present and review `git status` before touching files.
+The overview, schedules/notices, settings preferences, and notification entries remain prototype interactions. Bins and resident/staff reports use Firestore repositories for signed-in accounts, while signed-out preview roles continue to use explicitly labeled in-memory demo data. Email/password Authentication and email verification were tested by the owner; authentication does not globally gate every preview screen. There is no live sensor/GPS ingestion or push delivery. The preview role selector is not a security boundary. The worktree also contains earlier project scaffold/documentation changes; preserve work already present and review `git status` before touching files.
 
-## Immediate next implementation increment
+## Phase 1 foundation increment — agreed scope and acceptance criteria
 
-Start Phase 1 by confirming MVP acceptance criteria, user provisioning, and a role/permission matrix with the project owner. Then establish a Firebase development project and safe app configuration, implement Firebase Authentication and typed role resolution, and add deny-by-default Firestore rules with tests before connecting UI screens. Build typed repositories/adapters for approved public bin data and resident-owned reports, with explicit loading, empty, permission-denied, offline, and error states. Keep the demo provider as a deliberate preview/test adapter until Firebase paths and authorization are verified. Avoid route optimization and hardware integration until data and authorization paths are proven.
+The project owner has approved the first slice: email/password Authentication; resident self-registration with verified email required for personal reports; trusted Admin SDK provisioning for the first admin and staff; division-scoped supervisors; collectors limited to explicitly assigned routes; and resident report submission/tracking plus staff triage. The owner supplied public Firebase app configuration for the development project, stored only in the ignored local `.env`. No credentials or service-account material is present in the repository.
+
+Sequence:
+
+1. Establish a local Firebase Emulator Suite setup and deny-by-default Firestore rules.
+2. Implement Auth/session and trusted role boundaries without making the preview role selector authoritative.
+3. Add rule tests for permitted and denied resident, supervisor, administrator, and assigned-collector access.
+4. Add a validated, typed service-report repository boundary and explicit backend state/error handling.
+5. Keep the demo provider as the signed-out preview adapter. For signed-in accounts, use the Firebase repositories and show explicit errors; never silently fall back to demo data after a Firebase error.
+
+Acceptance criteria:
+
+- Residents can submit and read only their own reports after email verification. Unverified users, anonymous users, cross-user access, and client attempts to set report ownership/status are denied.
+- Report creation requires an existing bin record with `reportingEnabled: true`; Security Rules verify that flag, the submitted division, and canonical location against the trusted record. The controlled development project intentionally enables planned locations for end-to-end report testing; these reports are test data, not evidence of installed bins. Disable reporting before pilot/production use until locations are approved and installed. The demo bin fixtures are not readings or production telemetry.
+- Supervisors can read and transition only reports within their trusted division scope; administrators can read and transition reports city-wide. Invalid lifecycle transitions and edits to immutable report fields are denied.
+- Collectors can read only route documents explicitly assigned to their authenticated UID; an unassigned route is denied. Staffing shortages are handled through route reassignment, not division-wide collector access.
+- Role claims are issued only through trusted Admin SDK provisioning. A user cannot obtain or elevate a role by editing client data or choosing a preview role.
+- Security Rules tests cover both allowed and denied operations in the local emulator. Invalid remote report documents are surfaced as data errors, not coerced into valid-looking UI data.
+- Repository/UI state distinguishes loading, empty, permission-denied, offline/stale, and other errors. Firebase errors never produce demo-shaped success.
+- No live project credentials or secrets are committed. The UI remains in preview mode for signed-out sessions; signed-in bin/report screens use Firebase and surface backend failures rather than showing demo-shaped success.
+
+The owner confirmed Email/Password Authentication and Firestore are enabled, verified registration, sign-in/out, and email verification, and reports publishing the updated Firestore rules. Do not request or accept service-account keys in chat. Product decisions about report retention, identity beyond email verification, and other unimplemented role permissions remain open.
+
+### Current implementation state
+
+The local foundation now includes the standard Firebase JavaScript SDK setup, React Native Auth persistence, Auth/session and trusted role-provisioning boundaries, deny-by-default Firestore rules, rules-unit tests, indexes, and typed bin and resident-report repositories. The Settings account panel calls through the Auth repository and supports email/password sign-in, resident registration, verification email resend/refresh, and sign-out. The owner has confirmed live registration, sign-in/out, and email verification. The project's public web-app configuration is stored in the ignored local `.env`, and a web export builds successfully. Bins, resident reports, and staff report screens now use Firestore repositories for signed-in accounts; signed-out preview roles continue to use the in-memory demo adapter. All 13 local Firestore Security Rules emulator tests pass against the `demo-gcts` local project. A user-local Java 21 JRE is available at `$HOME/.local/share/gcts/openjdk-21`; it is not part of the app or repository.
+
+The planned-bin seed command includes the seven confirmed preview locations and a North Division `mmu-lab` test record. The owner reports manually creating these records in the Firebase Console and has chosen to enable `reportingEnabled` for controlled end-to-end testing; this workspace cannot independently verify or change the live fields. The Admin SDK seed remains available as a dry run/idempotent option and has not been applied here. Test reports against these locations do not indicate that bins are installed or operational; disable reporting before pilot/production use until locations are approved and installed. Rules require `reportingEnabled: true` before a report can be created for a bin. The owner estimates periodic/on-change bin readings (15+ minutes or on value change) and periodic vehicle updates; Firestore remains the simplest initial datastore with scoped realtime listeners. The example sensor JSON is illustrative only. Device ingestion remains deferred until the IoT team confirms its protocol, authentication, and retention requirements; rules deployment is owner-reported as complete.
+
+### Current Firebase setup status
+
+1. Email/Password Authentication and Firestore are enabled in the owner-controlled project. The owner reports publishing the current rules and creating the two report indexes needed by resident and supervisor list queries.
+2. The public Firebase app configuration is already in the local ignored `.env`; do not share service-account keys, passwords, or other credentials.
+3. Run rules tests with `JAVA_HOME="$HOME/.local/share/gcts/openjdk-21" PATH="$HOME/.local/share/gcts/openjdk-21/bin:$PATH" pnpm test:firestore-rules`. Java is required for the local Firestore Emulator only, not for the Expo app or Firebase JavaScript SDK.
+4. Before future rule changes, rerun Emulator tests, review the complete proposed rules, and ask the owner before deployment. For new compound queries, update `firestore.indexes.json` and arrange index deployment/creation; rules publication does not create indexes.
+5. Staff custom claims are assigned through trusted Admin SDK provisioning. The owner successfully assigned the first admin using Cloud Shell. The repository provisioning script requires ADC; the owner's local attempt failed for lack of credentials, so use a trusted environment. Do not put Admin SDK credentials in the client or chat.
+
+The planned-bin records are reported as manually seeded in the Firebase Console. The owner reports six have `reportingEnabled: true` for development testing. The rules allow verified residents to read reportable bins, supervisors to read reportable bins in their assigned divisions, and admins to read all reportable bins; disabled bins and all client writes remain denied. The owner reports publishing this rules version. Bins, resident report submission/tracking, and staff report triage are wired to Firestore repositories for signed-in accounts; signed-out preview roles continue to use the in-memory demo adapter. The owner confirmed the live resident report create/read and admin status-update flow. Before pilot/production use, set `reportingEnabled` false until sites are approved and installed.
+
+### Next implementation phase — route assignment and collection workflow
+
+The owner has confirmed the live resident/admin report round trip, so this phase can proceed. Read the current rules, role provisioning, and docs first. Keep hardware/GPS integration deferred. Before implementation, agree on the minimal Firestore route model and permissions for supervisor route assignment and collector assigned-route/stop updates; record collection outcomes as auditable events and ensure route/bin progress is consistent. Keep all SDK access behind typed repositories, preserve the signed-out preview adapter, validate incoming documents, and add allow/deny Emulator tests before any rules are published. Ask before changing the live project or expanding the agreed role permissions.
+
+### Deferred final-phase improvement — staff role-management workflow
+
+Keep the current trusted Authentication custom-claims model through the operational feature phases. Staff accounts are created by an authorized operator and roles/scopes are assigned using the Admin SDK from a trusted environment; the owner has successfully used Cloud Shell for the initial admin. Firebase Console does not expose a supported custom-claims field. Defer simplifying role assignment with a trusted GUI/workflow until the final planned project phase. At that time, evaluate options without allowing ordinary users to edit their own roles, and do not migrate to a Firestore role registry without reviewing and testing the authorization changes.

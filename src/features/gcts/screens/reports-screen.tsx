@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
+import {
+  ServiceReportRepositoryError,
+  type ReportListState,
+} from '@/features/gcts/data/service-report-repository';
+import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
+import type { ServiceReport } from '@/features/gcts/domain/service-report';
 import {
   useDemoRole,
   type ResidentReport,
@@ -24,20 +31,88 @@ const nextStatus: Partial<Record<ResidentReportStatus, ResidentReportStatus>> = 
   under_review: 'resolved',
 };
 
+const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
+
 export function ReportsScreen() {
-  const { role, residentReports, updateResidentReportStatus } = useDemoRole();
+  const { role: previewRole, residentReports, updateResidentReportStatus } = useDemoRole();
+  const { session } = useFirebaseAuth();
   const [filter, setFilter] = useState<ReportFilter>('All reports');
-  const isOperationsRole = role === 'admin' || role === 'supervisor';
+  const [reportsState, setReportsState] = useState<ReportListState>({ status: 'loading' });
+  const [busyReportId, setBusyReportId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const principal = session.status === 'signed-in' ? session.principal : null;
+  const liveMode = principal?.role === 'admin' || principal?.role === 'supervisor';
+  const role = principal?.role ?? previewRole;
+
+  useEffect(() => {
+    if (!liveMode || !principal) {
+      return;
+    }
+    return firebaseServiceReportRepository.subscribe(principal, setReportsState);
+  }, [liveMode, principal]);
+
+  const sourceReports = useMemo(() => {
+    if (!liveMode) {
+      return residentReports;
+    }
+    if (reportsState.status !== 'ready') {
+      return [];
+    }
+    return reportsState.reports.map(toDisplayReport);
+  }, [liveMode, residentReports, reportsState]);
+
   const reports = useMemo(
     () =>
-      residentReports.filter((report) => {
+      sourceReports.filter((report) => {
         if (filter === 'All reports') return true;
         const status = filter.toLowerCase().replace(' ', '_');
         return report.status === status;
       }),
-    [filter, residentReports]
+    [filter, sourceReports]
   );
-  const pendingCount = residentReports.filter((report) => report.status !== 'resolved').length;
+  const pendingCount = sourceReports.filter((report) => report.status !== 'resolved').length;
+
+  if (session.status === 'loading') {
+    return (
+      <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Checking account status.">
+        <DataMessage message="Checking Firebase account..." />
+      </AppPage>
+    );
+  }
+  if (session.status === 'error') {
+    return (
+      <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Firebase account status is unavailable.">
+        <DataMessage message={session.failure.message} />
+      </AppPage>
+    );
+  }
+
+  async function advanceReport(report: ResidentReport) {
+    const status = nextStatus[report.status];
+    if (!status) {
+      return;
+    }
+    if (!liveMode || !principal) {
+      updateResidentReportStatus(report.id, status);
+      return;
+    }
+
+    setBusyReportId(report.id);
+    setActionMessage(null);
+    try {
+      await firebaseServiceReportRepository.transitionStatus(principal, report.id, status);
+    } catch (error) {
+      setActionMessage(
+        error instanceof ServiceReportRepositoryError
+          ? error.failure.message
+          : 'The report status could not be updated. Try again.'
+      );
+    } finally {
+      setBusyReportId(null);
+    }
+  }
+
+  const isOperationsRole = role === 'admin' || role === 'supervisor';
 
   if (!isOperationsRole) {
     return (
@@ -58,11 +133,31 @@ export function ReportsScreen() {
       eyebrow="SERVICE DESK"
       title="Resident reports"
       subtitle="Review and follow up on collection requests from across the city.">
+      <DataMessage
+        message={liveMode ? 'LIVE FIRESTORE REPORTS' : 'PREVIEW MODE · reports are in memory'}
+        tone="info"
+      />
+      {actionMessage && <DataMessage message={actionMessage} />}
+      {liveMode && reportsState.status === 'loading' && (
+        <DataMessage message="Loading reports..." />
+      )}
+      {liveMode && reportsState.status === 'permission-denied' && (
+        <DataMessage message={reportsState.message} />
+      )}
+      {liveMode && reportsState.status === 'offline' && (
+        <DataMessage message={reportsState.message} />
+      )}
+      {liveMode && reportsState.status === 'error' && (
+        <DataMessage message={reportsState.failure.message} />
+      )}
+      {liveMode && reportsState.status === 'ready' && reportsState.source === 'cache' && (
+        <DataMessage message="Showing cached reports; they may be out of date." />
+      )}
       <View style={styles.summaryRow}>
-        <SummaryCard value={String(residentReports.length)} label="Total reports" icon="reports" />
+        <SummaryCard value={String(sourceReports.length)} label="Total reports" icon="reports" />
         <SummaryCard value={String(pendingCount)} label="Needs attention" icon="priority" />
         <SummaryCard
-          value={String(residentReports.filter((report) => report.status === 'resolved').length)}
+          value={String(sourceReports.filter((report) => report.status === 'resolved').length)}
           label="Resolved"
           icon="available"
         />
@@ -85,31 +180,67 @@ export function ReportsScreen() {
       </View>
 
       <View style={styles.reportList}>
-        {reports.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <GctsIcon name="available" size={22} color={palette.green} />
-            </View>
-            <Text style={styles.emptyTitle}>
-              {filter === 'All reports' ? 'No reports to review' : `No ${filter.toLowerCase()}`}
-            </Text>
-            <Text style={styles.emptyCopy}>New resident requests will appear here.</Text>
-          </View>
-        ) : (
+        {(!liveMode && reports.length === 0)
+          || (liveMode && (
+            reportsState.status === 'empty'
+            || (reportsState.status === 'ready' && reports.length === 0)
+          )) ? (
+          <EmptyReports filter={filter} />
+        ) : null}
+        {reports.length > 0 && (!liveMode || reportsState.status === 'ready') ? (
           reports.map((report) => (
             <ReportCard
               key={report.id}
               report={report}
-              onAdvance={() => {
-                const status = nextStatus[report.status];
-                if (status) updateResidentReportStatus(report.id, status);
-              }}
+              disabled={busyReportId === report.id}
+              onAdvance={() => void advanceReport(report)}
             />
           ))
-        )}
+        ) : null}
       </View>
     </AppPage>
   );
+}
+
+function EmptyReports({ filter }: { filter: ReportFilter }) {
+  return (
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <GctsIcon name="available" size={22} color={palette.green} />
+      </View>
+      <Text style={styles.emptyTitle}>
+        {filter === 'All reports' ? 'No reports to review' : `No ${filter.toLowerCase()}`}
+      </Text>
+      <Text style={styles.emptyCopy}>New resident requests will appear here.</Text>
+    </View>
+  );
+}
+
+function DataMessage({
+  message,
+  tone = 'warning',
+}: {
+  message: string;
+  tone?: 'warning' | 'info';
+}) {
+  return (
+    <View style={[styles.dataMessage, tone === 'info' && styles.dataMessageInfo]}>
+      <Text style={[styles.dataMessageText, tone === 'info' && styles.dataMessageInfoText]}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+function toDisplayReport(report: ServiceReport): ResidentReport {
+  return {
+    id: report.id,
+    type: report.type,
+    location: report.location,
+    details: report.details,
+    status: report.status,
+    submittedLabel: report.createdAt.toLocaleString(),
+  };
 }
 
 function SummaryCard({ value, label, icon }: { value: string; label: string; icon: 'reports' | 'priority' | 'available' }) {
@@ -127,9 +258,11 @@ function SummaryCard({ value, label, icon }: { value: string; label: string; ico
 function ReportCard({
   report,
   onAdvance,
+  disabled,
 }: {
   report: ResidentReport;
   onAdvance: () => void;
+  disabled: boolean;
 }) {
   const next = nextStatus[report.status];
   return (
@@ -154,10 +287,19 @@ function ReportCard({
         {next && (
           <Pressable
             accessibilityRole="button"
+            disabled={disabled}
             onPress={onAdvance}
-            style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+            style={({ pressed }) => [
+              styles.actionButton,
+              disabled && styles.actionButtonDisabled,
+              pressed && !disabled && styles.pressed,
+            ]}>
             <Text style={styles.actionButtonText}>
-              {next === 'under_review' ? 'Start review' : 'Mark resolved'}
+              {disabled
+                ? 'Updating...'
+                : next === 'under_review'
+                  ? 'Start review'
+                  : 'Mark resolved'}
             </Text>
             <GctsIcon name="chevron" size={14} color={palette.white} />
           </Pressable>
@@ -308,6 +450,27 @@ const styles = StyleSheet.create({
     color: palette.white,
     fontSize: 10,
     fontWeight: '800',
+  },
+  actionButtonDisabled: {
+    opacity: 0.6,
+  },
+  dataMessage: {
+    padding: 11,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: palette.amberSoft,
+  },
+  dataMessageText: {
+    color: palette.amber,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  dataMessageInfo: {
+    backgroundColor: palette.mint,
+  },
+  dataMessageInfoText: {
+    color: palette.forest,
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',

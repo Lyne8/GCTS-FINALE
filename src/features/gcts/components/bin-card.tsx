@@ -18,12 +18,13 @@ export function BinCard({ bin, onPress, compact = false, publicView = false }: B
     collection_due: 'priority',
     nearly_full: 'nearlyFull',
     available: 'available',
+    unknown: 'bins',
   };
 
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`${bin.name}, ${bin.fillLevelPercent}% full, ${getBinUrgencyLabel(urgency)}`}
+      accessibilityLabel={`${bin.name}, ${bin.fillLevelPercent === null ? 'no reading' : `${bin.fillLevelPercent}% full`}, ${getBinUrgencyLabel(urgency)}`}
       onPress={onPress}
       disabled={!onPress}
       style={({ pressed }) => [styles.card, compact && styles.compactCard, pressed && styles.pressed]}>
@@ -46,15 +47,22 @@ export function BinCard({ bin, onPress, compact = false, publicView = false }: B
           <View
             style={[
               styles.progressFill,
-              { width: `${bin.fillLevelPercent}%`, backgroundColor: urgencyStyles.bar },
+              {
+                width: `${bin.fillLevelPercent ?? 0}%`,
+                backgroundColor: urgencyStyles.bar,
+              },
             ]}
           />
         </View>
-        <Text style={[styles.fillValue, urgencyStyles.text]}>{bin.fillLevelPercent}%</Text>
+        <Text style={[styles.fillValue, urgencyStyles.text]}>
+          {bin.fillLevelPercent === null ? '—' : `${bin.fillLevelPercent}%`}
+        </Text>
       </View>
       {!compact && (
         <View style={styles.bottomRow}>
-          <Text style={styles.readingSource}>SIMULATED READING</Text>
+          <Text style={styles.readingSource}>
+            {bin.source === 'simulated' ? 'SIMULATED READING' : 'FIRESTORE RECORD'}
+          </Text>
           <Text style={styles.updated}>{bin.lastUpdatedLabel}</Text>
         </View>
       )}
@@ -80,6 +88,12 @@ const urgencyStyle = {
     text: { color: palette.green },
     icon: palette.green,
     bar: '#4B9A6D',
+  },
+  unknown: {
+    pill: { backgroundColor: '#EEF1ED' },
+    text: { color: palette.muted },
+    icon: palette.muted,
+    bar: '#AAB5AD',
   },
 } as const;
 

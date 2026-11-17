@@ -1,0 +1,164 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn()
+        && 'role' in request.auth.token
+        && request.auth.token.role == role;
+    }
+
+    function isVerifiedResident() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (
+          !('role' in request.auth.token)
+          || request.auth.token.role == 'resident'
+        );
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function hasDivisionAccess(divisionId) {
+      return isAdmin()
+        || (
+          hasRole('supervisor')
+          && 'divisionIds' in request.auth.token
+          && request.auth.token.divisionIds is list
+          && divisionId in request.auth.token.divisionIds
+        );
+    }
+
+    function canReadReport(report) {
+      return (
+          isVerifiedResident()
+          && report.residentUid == request.auth.uid
+        )
+        || isAdmin()
+        || (
+          hasRole('supervisor')
+          && hasDivisionAccess(report.divisionId)
+        );
+    }
+
+    function canReviewReport(report) {
+      return isAdmin() || hasDivisionAccess(report.divisionId);
+    }
+
+    function canReadReportableBin(bin) {
+      return bin.reportingEnabled == true
+        && (
+          isVerifiedResident()
+          || isAdmin()
+          || (
+            hasRole('supervisor')
+            && hasDivisionAccess(bin.divisionId)
+          )
+        );
+    }
+
+    function isReportableBin(binId, divisionId, location) {
+      let binPath = /databases/$(database)/documents/bins/$(binId);
+      return exists(binPath)
+        && get(binPath).data.reportingEnabled == true
+        && get(binPath).data.divisionId == divisionId
+        && get(binPath).data.name == location;
+    }
+
+    function validReportCreate(data) {
+      return data.keys().hasAll([
+          'residentUid',
+          'divisionId',
+          'binId',
+          'type',
+          'location',
+          'details',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'residentUid',
+          'divisionId',
+          'binId',
+          'type',
+          'location',
+          'details',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.residentUid == request.auth.uid
+        && data.divisionId is string
+        && data.divisionId.size() > 0
+        && data.divisionId.size() <= 64
+        && data.binId is string
+        && data.binId.size() > 0
+        && data.binId.size() <= 128
+        && data.type in ['overflowing_bin', 'missed_collection']
+        && data.location is string
+        && data.location.size() > 0
+        && data.location.size() <= 160
+        && isReportableBin(data.binId, data.divisionId, data.location)
+        && data.details is string
+        && data.details.size() > 0
+        && data.details.size() <= 1000
+        && data.status == 'received'
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validStatusTransition(previous, next) {
+      return (
+          previous == 'received'
+          && next == 'under_review'
+        )
+        || (
+          previous == 'under_review'
+          && next == 'resolved'
+        );
+    }
+
+    match /serviceReports/{reportId} {
+      allow get, list: if canReadReport(resource.data);
+
+      allow create: if isVerifiedResident()
+        && validReportCreate(request.resource.data);
+
+      allow update: if canReviewReport(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && validStatusTransition(
+          resource.data.status,
+          request.resource.data.status
+        );
+
+      allow delete: if false;
+    }
+
+    match /routes/{routeId} {
+      allow get, list: if isAdmin()
+        || hasDivisionAccess(resource.data.divisionId)
+        || (
+          hasRole('collector')
+          && 'collectorUid' in resource.data
+          && resource.data.collectorUid == request.auth.uid
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    match /bins/{binId} {
+      allow get, list: if canReadReportableBin(resource.data);
+
+      allow create, update, delete: if false;
+    }
+  }
+}

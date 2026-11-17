@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { AppPage } from '@/features/gcts/components/app-page';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { palette } from '@/features/gcts/palette';
+import { FirebaseAccountPanel } from '@/features/auth/components/firebase-account-panel';
 
 const divisions = ['All divisions', 'Central Division', 'North Division'];
 
@@ -64,18 +65,7 @@ export function SettingsScreen() {
 
       <View style={styles.group}>
         <Text style={styles.groupTitle}>Account</Text>
-        <View style={styles.card}>
-          <View style={styles.accountRow}>
-            <View style={styles.accountIcon}>
-              <GctsIcon name="person" size={20} color={palette.forest} />
-            </View>
-            <View style={styles.accountCopy}>
-              <Text style={styles.accountName}>GCTS user</Text>
-              <Text style={styles.accountRole}>City operations</Text>
-            </View>
-            <GctsIcon name="chevron" size={16} color={palette.muted} />
-          </View>
-        </View>
+        <FirebaseAccountPanel />
       </View>
     </AppPage>
   );
@@ -190,32 +180,5 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.45,
-  },
-  accountRow: {
-    minHeight: 70,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-  },
-  accountIcon: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    backgroundColor: palette.mint,
-  },
-  accountCopy: {
-    flex: 1,
-  },
-  accountName: {
-    color: palette.ink,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  accountRole: {
-    color: palette.muted,
-    fontSize: 10,
-    marginTop: 3,
   },
 });

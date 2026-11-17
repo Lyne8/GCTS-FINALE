@@ -4,7 +4,7 @@
 
 The Garbage Collection Tracker System (GCTS) is a proposed system to help Fort Portal Tourism City monitor bins, coordinate collection work, and evaluate operational performance. The proposal identifies Central and North Divisions as the intended pilot area.
 
-This repository covers the software work: a mobile-first Expo application, with web support for operational and resident workflows, intended to be backed by Firebase. The first implementation phase does not build, procure, or connect IoT hardware. Current app screens use clearly labeled in-memory simulated data; Firebase is not configured yet.
+This repository covers the software work: a mobile-first Expo application, with web support for operational and resident workflows, backed by Firebase. The first implementation phase does not build, procure, or connect IoT hardware. Signed-in bin and report workflows use Firestore repositories; signed-out preview mode retains clearly labeled in-memory simulated data.
 
 ## One app, four roles
 
@@ -17,7 +17,7 @@ Initial role model to validate with stakeholders:
 - **Collector/driver:** views an assigned route and records collection progress.
 - **Resident:** views public bin status and confirmed collection notices/schedules; signs in to submit and track overflow or missed-collection reports.
 
-Role permissions, account-provisioning process, resident identity verification, and the public/private boundary are not yet approved requirements.
+The initial Auth and report/bin permissions are implemented and covered by Firestore rules tests; the owner has confirmed the live resident-report and admin-review flow. Staff roles use trusted Authentication custom claims, not client-selected roles. Remaining operational permissions, resident identity beyond email verification, and the public/private boundary for future data are still subject to stakeholder validation.
 
 ## Product capabilities
 
@@ -50,6 +50,6 @@ The proposal intends to evaluate overflow, route distance, number of trips, resp
 - [Figma prototype](https://ego-hurry-23638485.figma.site/): source of example screens and sample workflows.
 - Gemini shared conversation link was not reachable during preparation of these docs; use the pasted proposal content unless the owner provides additional material.
 
-The current UI increment includes a role-aware preview shell; overview, bins, and route screens; resident service information and report submission; an admin resident-report queue with in-memory status changes; a basic settings screen; and a lightweight notification panel. The web admin workspace has a desktop sidebar and uses bottom navigation at smaller widths. These are prototype interactions, not a deployed service: operational records/reports are held in memory, settings are screen-local, notification content is illustrative, and there is no Firebase, authentication, persistent storage, push delivery, or verified schedule/notice source yet.
+The current UI increment includes a role-aware preview shell; overview, bins, and route screens; resident service information and report submission; a resident-report queue; a basic settings screen; and a lightweight notification panel. The web admin workspace has a desktop sidebar and uses bottom navigation at smaller widths. The Settings account panel supports Firebase email/password sign-in, resident self-registration, verification-email resend, and session sign-out; the owner confirmed these live Auth flows work. Authentication does not globally gate all preview screens; signed-in bin and report routes use trusted Auth claims and Firestore repositories, while signed-out preview roles use the in-memory demo provider. Settings are screen-local, notification content is illustrative, and there is no push delivery or verified schedule/notice source yet.
 
-The next implementation stage is Firebase foundation work: confirm the MVP workflows, role/permission matrix and account provisioning; configure development Firebase safely; implement Authentication; and then add deny-by-default Firestore rules and typed repositories. Do not treat the role selector or client-side navigation as authentication or authorization.
+The Firebase foundation includes email/password Authentication, trusted role provisioning, deny-by-default Firestore rules, and typed bin/report repository boundaries. The owner's public project configuration is stored in the ignored local `.env`; authenticated bin and report screens use Firestore while signed-out preview roles continue to use in-memory demo data. The owner reports publishing rules that allow verified residents, division-scoped supervisors, and admins to read reportable bins, and enabling the composite indexes required by report list queries. The owner confirmed a resident report could be submitted and read back and that a trusted admin could view it and change its status. All 13 local Firestore Emulator rule tests pass using a user-local Java runtime. Staff custom claims are assigned through trusted Admin SDK provisioning; the current role-management usability improvement is intentionally deferred until the final planned phase. Do not treat the role selector or client-side navigation as authentication or authorization.

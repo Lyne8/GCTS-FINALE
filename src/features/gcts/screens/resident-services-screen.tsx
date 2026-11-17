@@ -1,9 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
 import { demoBins } from '@/features/gcts/data/demo-bins';
+import { type BinListState } from '@/features/gcts/data/bin-repository';
+import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
+import {
+  ServiceReportRepositoryError,
+  type ReportListState,
+} from '@/features/gcts/data/service-report-repository';
+import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
+import type { ServiceReport } from '@/features/gcts/domain/service-report';
 import {
   useDemoRole,
   type ResidentReportType,
@@ -21,12 +30,66 @@ const reportStatusLabel = {
   resolved: 'Resolved',
 } as const;
 
+const firebaseBinRepository = new FirebaseBinRepository();
+const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
+
 export function ResidentServicesScreen() {
-  const { role, residentReports, addResidentReport } = useDemoRole();
+  const { role: previewRole, residentReports, addResidentReport } = useDemoRole();
+  const { session } = useFirebaseAuth();
   const [type, setType] = useState<ResidentReportType>('overflowing_bin');
   const [location, setLocation] = useState('');
   const [details, setDetails] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [binsState, setBinsState] = useState<BinListState>({ status: 'loading' });
+  const [reportsState, setReportsState] = useState<ReportListState>({ status: 'loading' });
+  const principal = session.status === 'signed-in' ? session.principal : null;
+
+  useEffect(() => {
+    if (principal?.role !== 'resident') {
+      return;
+    }
+    return firebaseBinRepository.subscribe(principal, setBinsState);
+  }, [principal]);
+
+  useEffect(() => {
+    if (principal?.role !== 'resident') {
+      return;
+    }
+    return firebaseServiceReportRepository.subscribe(principal, setReportsState);
+  }, [principal]);
+
+  const role = principal?.role ?? previewRole;
+  const liveMode = principal?.role === 'resident';
+  const bins = liveMode
+    ? binsState.status === 'ready'
+      ? binsState.bins
+      : []
+    : demoBins;
+  const reports = useMemo(() => {
+    if (!liveMode) {
+      return residentReports;
+    }
+    if (reportsState.status !== 'ready') {
+      return [];
+    }
+    return reportsState.reports.map(toDisplayReport);
+  }, [liveMode, residentReports, reportsState]);
+
+  if (session.status === 'loading') {
+    return (
+      <AppPage eyebrow="RESIDENT SERVICES" title="Report an issue" subtitle="Checking account status...">
+        <DataMessage message="Checking Firebase account..." />
+      </AppPage>
+    );
+  }
+  if (session.status === 'error') {
+    return (
+      <AppPage eyebrow="RESIDENT SERVICES" title="Report an issue" subtitle="Firebase account status is unavailable.">
+        <DataMessage message={session.failure.message} />
+      </AppPage>
+    );
+  }
 
   if (role !== 'resident') {
     return (
@@ -44,13 +107,44 @@ export function ResidentServicesScreen() {
     );
   }
 
-  const submitReport = () => {
+  const submitReport = async () => {
     if (!location || details.trim().length === 0) {
       return;
     }
 
-    const selectedBin = demoBins.find((bin) => bin.id === location);
+    const selectedBin = bins.find((bin) => bin.id === location);
     if (!selectedBin) {
+      setConfirmation('Select an available bin location before submitting.');
+      return;
+    }
+
+    if (liveMode) {
+      if (!principal?.emailVerified) {
+        setConfirmation('Verify your email before submitting a report.');
+        return;
+      }
+
+      setSubmitting(true);
+      setConfirmation('');
+      try {
+        await firebaseServiceReportRepository.create(principal, {
+          binId: selectedBin.id,
+          divisionId: selectedBin.divisionId,
+          type,
+          location: selectedBin.name,
+          details: details.trim(),
+        });
+        setDetails('');
+        setConfirmation('Your report was submitted to GCTS.');
+      } catch (error) {
+        setConfirmation(
+          error instanceof ServiceReportRepositoryError
+            ? error.failure.message
+            : 'The report could not be submitted. Try again or contact the project administrator.'
+        );
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
 
@@ -60,7 +154,7 @@ export function ResidentServicesScreen() {
       details: details.trim(),
     });
     setDetails('');
-    setConfirmation('Your report has been received.');
+    setConfirmation('Preview report received. This report is stored only in this session.');
   };
 
   return (
@@ -68,6 +162,13 @@ export function ResidentServicesScreen() {
       eyebrow="RESIDENT SERVICES"
       title="Report an issue"
       subtitle="Share a collection concern and check service information for your area.">
+      <DataMessage
+        message={liveMode ? 'LIVE FIRESTORE REPORTS' : 'PREVIEW MODE · reports are in memory'}
+        tone="info"
+      />
+      {liveMode && !principal.emailVerified && (
+        <DataMessage message="Verify your email in Settings before submitting or viewing reports." />
+      )}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Service schedule and notices</Text>
         <View style={styles.infoCard}>
@@ -109,8 +210,26 @@ export function ResidentServicesScreen() {
           </View>
 
           <Text style={styles.fieldLabel}>Where is the issue?</Text>
+          {liveMode && binsState.status === 'loading' && (
+            <DataMessage message="Loading reportable bin locations..." />
+          )}
+          {liveMode && binsState.status === 'empty' && (
+            <DataMessage message="No reportable bin locations are currently available." />
+          )}
+          {liveMode && binsState.status === 'permission-denied' && (
+            <DataMessage message={binsState.message} />
+          )}
+          {liveMode && binsState.status === 'offline' && (
+            <DataMessage message={binsState.message} />
+          )}
+          {liveMode && binsState.status === 'error' && (
+            <DataMessage message={binsState.failure.message} />
+          )}
+          {liveMode && binsState.status === 'ready' && binsState.source === 'cache' && (
+            <DataMessage message="Showing cached bin locations; they may be out of date." />
+          )}
           <View style={styles.locationOptions}>
-            {demoBins.map((bin) => {
+            {bins.map((bin) => {
               const selected = location === bin.id;
               return (
                 <Pressable
@@ -150,15 +269,30 @@ export function ResidentServicesScreen() {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: !location || details.trim().length === 0 }}
-            disabled={!location || details.trim().length === 0}
-            onPress={submitReport}
+            accessibilityState={{
+              disabled: !location || details.trim().length === 0 || submitting
+                || (liveMode && (!principal.emailVerified || binsState.status !== 'ready')),
+            }}
+            disabled={
+              !location
+              || details.trim().length === 0
+              || submitting
+              || (liveMode && (!principal.emailVerified || binsState.status !== 'ready'))
+            }
+            onPress={() => void submitReport()}
             style={({ pressed }) => [
               styles.submitButton,
-              (!location || details.trim().length === 0) && styles.submitButtonDisabled,
+              (
+                !location
+                || details.trim().length === 0
+                || submitting
+                || (liveMode && (!principal.emailVerified || binsState.status !== 'ready'))
+              ) && styles.submitButtonDisabled,
               pressed && styles.pressed,
             ]}>
-            <Text style={styles.submitButtonText}>Submit report</Text>
+            <Text style={styles.submitButtonText}>
+              {submitting ? 'Submitting...' : 'Submit report'}
+            </Text>
           </Pressable>
           {confirmation.length > 0 && (
             <Text accessibilityLiveRegion="polite" style={styles.confirmation}>
@@ -171,16 +305,36 @@ export function ResidentServicesScreen() {
       <View style={styles.section}>
         <View style={styles.reportsHeading}>
           <Text style={styles.sectionTitle}>My submitted reports</Text>
-          <Text style={styles.reportCount}>{residentReports.length}</Text>
+          <Text style={styles.reportCount}>
+            {liveMode && reportsState.status !== 'ready' ? '—' : reports.length}
+          </Text>
         </View>
-        {residentReports.length === 0 ? (
+        {liveMode && reportsState.status === 'loading' ? (
+          <DataMessage message="Loading your reports..." />
+        ) : null}
+        {liveMode && reportsState.status === 'empty' ? (
           <View style={styles.emptyReports}>
             <Text style={styles.emptyTitle}>No reports yet</Text>
             <Text style={styles.emptyCopy}>Your submitted service requests will appear here.</Text>
           </View>
-        ) : (
+        ) : null}
+        {liveMode && reportsState.status === 'permission-denied' && (
+          <DataMessage message={reportsState.message} />
+        )}
+        {liveMode && reportsState.status === 'offline' && (
+          <DataMessage message={reportsState.message} />
+        )}
+        {liveMode && reportsState.status === 'error' && (
+          <DataMessage message={reportsState.failure.message} />
+        )}
+        {liveMode && reportsState.status === 'ready' && reportsState.source === 'cache' && (
+          <DataMessage message="Showing cached reports; they may be out of date." />
+        )}
+        {(!liveMode && reports.length === 0) || (liveMode && reportsState.status === 'empty')
+          ? null
+          : (!liveMode || reportsState.status === 'ready') && reports.length > 0 ? (
           <View style={styles.reportList}>
-            {residentReports.map((report) => (
+            {reports.map((report) => (
               <View key={report.id} style={styles.reportCard}>
                 <View style={styles.reportHeader}>
                   <Text style={styles.reportType}>
@@ -194,10 +348,37 @@ export function ResidentServicesScreen() {
               </View>
             ))}
           </View>
-        )}
+        ) : null}
       </View>
     </AppPage>
   );
+}
+
+function DataMessage({
+  message,
+  tone = 'warning',
+}: {
+  message: string;
+  tone?: 'warning' | 'info';
+}) {
+  return (
+    <View style={[styles.dataMessage, tone === 'info' && styles.dataMessageInfo]}>
+      <Text style={[styles.dataMessageText, tone === 'info' && styles.dataMessageInfoText]}>
+        {message}
+      </Text>
+    </View>
+  );
+}
+
+function toDisplayReport(report: ServiceReport) {
+  return {
+    id: report.id,
+    type: report.type,
+    location: report.location,
+    details: report.details,
+    status: report.status,
+    submittedLabel: report.createdAt.toLocaleString(),
+  };
 }
 
 const styles = StyleSheet.create({
@@ -424,5 +605,23 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.75,
+  },
+  dataMessage: {
+    padding: 11,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: palette.amberSoft,
+  },
+  dataMessageText: {
+    color: palette.amber,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  dataMessageInfo: {
+    backgroundColor: palette.mint,
+  },
+  dataMessageInfoText: {
+    color: palette.forest,
+    fontWeight: '700',
   },
 });

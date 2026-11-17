@@ -36,7 +36,7 @@ export default function AppTabs() {
       ? { name: 'resident', href: '/resident', icon: 'report', label: 'Report issue' }
       : { name: 'routes', href: '/routes', icon: 'routes', label: 'Routes' },
   ];
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'supervisor') {
     items.push({ name: 'reports', href: '/reports', icon: 'reports', label: 'Reports' });
   }
   items.push({ name: 'settings', href: '/settings', icon: 'settings', label: 'Settings' });

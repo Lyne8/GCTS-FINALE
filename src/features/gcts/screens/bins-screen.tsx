@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -13,6 +13,8 @@ import { AppPage } from '@/features/gcts/components/app-page';
 import { BinCard } from '@/features/gcts/components/bin-card';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { demoBins } from '@/features/gcts/data/demo-bins';
+import type { BinListState } from '@/features/gcts/data/bin-repository';
+import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import {
   getBinUrgency,
   getBinUrgencyLabel,
@@ -21,6 +23,7 @@ import {
 } from '@/features/gcts/domain/bin';
 import { useDemoRole } from '@/features/gcts/state/demo-role-context';
 import { palette } from '@/features/gcts/palette';
+import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 
 type BinFilter = 'all' | 'collection_due' | 'nearly_full' | 'available';
 
@@ -32,28 +35,51 @@ const filters: { value: BinFilter; label: string }[] = [
 ];
 
 const collectorBinIds = new Set(['central-market', 'mpanga-market', 'kabundaire-market']);
+const firebaseBinRepository = new FirebaseBinRepository();
 
 export function BinsScreen() {
-  const { role } = useDemoRole();
+  const { role: previewRole } = useDemoRole();
+  const { session } = useFirebaseAuth();
   const [filter, setFilter] = useState<BinFilter>('all');
   const [query, setQuery] = useState('');
   const [selectedBin, setSelectedBin] = useState<WasteBin | null>(null);
+  const [liveBins, setLiveBins] = useState<BinListState>({ status: 'loading' });
+  const principal = session.status === 'signed-in' ? session.principal : null;
 
-  const roleBins =
-    role === 'collector'
+  useEffect(() => {
+    if (!principal) {
+      return;
+    }
+    return firebaseBinRepository.subscribe(principal, setLiveBins);
+  }, [principal]);
+
+  if (session.status === 'loading') {
+    return <AppPage eyebrow="BIN MONITORING" title="Bins" subtitle="Checking account status..." />;
+  }
+  if (session.status === 'error') {
+    return (
+      <AppPage eyebrow="BIN MONITORING" title="Bins" subtitle="Firebase account status is unavailable.">
+        <DataMessage message={session.failure.message} />
+      </AppPage>
+    );
+  }
+
+  const role = principal?.role ?? previewRole;
+  const roleBins = principal
+    ? liveBins.status === 'ready'
+      ? liveBins.bins
+      : []
+    : role === 'collector'
       ? demoBins.filter((bin) => collectorBinIds.has(bin.id))
       : demoBins;
-  const counts = useMemo(
-    () => ({
-      all: roleBins.length,
-      collection_due: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due')
-        .length,
-      nearly_full: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'nearly_full')
-        .length,
-      available: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'available').length,
-    }),
-    [roleBins]
-  );
+  const counts = {
+    all: roleBins.length,
+    collection_due: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due')
+      .length,
+    nearly_full: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'nearly_full')
+      .length,
+    available: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'available').length,
+  };
   const filteredBins = roleBins.filter((bin) => {
     const matchesFilter = filter === 'all' || getBinUrgency(bin.fillLevelPercent) === filter;
     const normalizedQuery = query.trim().toLowerCase();
@@ -72,6 +98,30 @@ export function BinsScreen() {
           ? 'Check public bin locations and status.'
           : 'Browse fill levels by location and collection priority.'
       }>
+      <DataMessage
+        message={principal ? 'LIVE FIRESTORE DATA' : 'PREVIEW DATA · simulated readings'}
+        tone="info"
+      />
+      {principal && liveBins.status === 'loading' && (
+        <DataMessage message="Loading bin locations..." />
+      )}
+      {principal && (
+        <>
+          {liveBins.status === 'empty' && (
+            <DataMessage message="No reportable bin records are available." />
+          )}
+          {liveBins.status === 'permission-denied' && (
+            <DataMessage message={liveBins.message} />
+          )}
+          {liveBins.status === 'offline' && <DataMessage message={liveBins.message} />}
+          {liveBins.status === 'error' && (
+            <DataMessage message={liveBins.failure.message} />
+          )}
+          {liveBins.status === 'ready' && liveBins.source === 'cache' && (
+            <DataMessage message="Showing cached Firestore data; it may be out of date." />
+          )}
+        </>
+      )}
       <View style={styles.summaryRow}>
         <SummaryCard value={String(counts.collection_due)} label="Collection due" tone="red" />
         <SummaryCard value={String(counts.nearly_full)} label="Nearly full" tone="amber" />
@@ -140,7 +190,13 @@ export function BinsScreen() {
             onPress={() => setSelectedBin(bin)}
           />
         ))}
-        {filteredBins.length === 0 && (
+        {filteredBins.length === 0 && !principal && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No matching bins</Text>
+            <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
+          </View>
+        )}
+        {principal && liveBins.status === 'ready' && filteredBins.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No matching bins</Text>
             <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
@@ -149,11 +205,31 @@ export function BinsScreen() {
       </View>
 
       <BinDetailModal
-        bin={selectedBin}
+        bin={
+          principal && liveBins.status === 'ready'
+            ? liveBins.bins.find((bin) => bin.id === selectedBin?.id) ?? null
+            : selectedBin
+        }
         publicView={role === 'resident'}
         onClose={() => setSelectedBin(null)}
       />
     </AppPage>
+  );
+}
+
+function DataMessage({
+  message,
+  tone = 'warning',
+}: {
+  message: string;
+  tone?: 'warning' | 'info';
+}) {
+  return (
+    <View style={[styles.dataMessage, tone === 'info' && styles.dataMessageInfo]}>
+      <Text style={[styles.dataMessageText, tone === 'info' && styles.dataMessageInfoText]}>
+        {message}
+      </Text>
+    </View>
   );
 }
 
@@ -359,6 +435,24 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 11,
     marginTop: 5,
+  },
+  dataMessage: {
+    padding: 11,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: palette.amberSoft,
+  },
+  dataMessageText: {
+    color: palette.amber,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  dataMessageInfo: {
+    backgroundColor: palette.mint,
+  },
+  dataMessageInfoText: {
+    color: palette.forest,
+    fontWeight: '700',
   },
   modalRoot: {
     flex: 1,

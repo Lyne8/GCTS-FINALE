@@ -35,7 +35,7 @@ export default function AppTabs() {
             <NativeTabs.Trigger.Label>Routes</NativeTabs.Trigger.Label>
           </NativeTabs.Trigger>
         )}
-        {!resident && role === 'admin' && (
+        {!resident && (role === 'admin' || role === 'supervisor') && (
           <NativeTabs.Trigger name="reports">
             <NativeTabs.Trigger.Icon md="assignment" sf="doc.text.fill" />
             <NativeTabs.Trigger.Label>Reports</NativeTabs.Trigger.Label>
