@@ -8,11 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
 
 import { AppPage } from '@/features/gcts/components/app-page';
 import { BinCard } from '@/features/gcts/components/bin-card';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
+import { GctsMapView } from '@/features/gcts/components/gcts-map-view';
 import type { BinListState } from '@/features/gcts/data/bin-repository';
 import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import {
@@ -21,7 +21,7 @@ import {
   type BinUrgency,
   type WasteBin,
 } from '@/features/gcts/domain/bin';
-import { useDemoRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 import { palette } from '@/features/gcts/palette';
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 
@@ -37,9 +37,10 @@ const filters: { value: BinFilter; label: string }[] = [
 const firebaseBinRepository = new FirebaseBinRepository();
 
 export function BinsScreen() {
-  const { role: previewRole } = useDemoRole();
+  const { role: previewRole, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
   const [filter, setFilter] = useState<BinFilter>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
   const [query, setQuery] = useState('');
   const [selectedBin, setSelectedBin] = useState<WasteBin | null>(null);
   const [liveBins, setLiveBins] = useState<BinListState>({ status: 'loading' });
@@ -102,7 +103,7 @@ export function BinsScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.navigate('/settings')}
+            onPress={() => setSettingsVisible(true)}
             style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
             <Text style={styles.ctaButtonText}>Sign In or Register</Text>
           </Pressable>
@@ -179,28 +180,74 @@ export function BinsScreen() {
           </ScrollView>
 
           <View style={styles.listHeading}>
-            <Text style={styles.listTitle}>
-              {filter === 'all' ? 'All locations' : filters.find((item) => item.value === filter)?.label}
-            </Text>
-            <Text style={styles.listCount}>{filteredBins.length} shown</Text>
+            <View>
+              <Text style={styles.listTitle}>
+                {filter === 'all' ? 'All locations' : filters.find((item) => item.value === filter)?.label}
+              </Text>
+              <Text style={styles.listCount}>{filteredBins.length} shown</Text>
+            </View>
+            <View style={styles.segmentContainer}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="List view"
+                accessibilityState={{ selected: viewMode === 'list' }}
+                onPress={() => setViewMode('list')}
+                style={[styles.segmentButton, viewMode === 'list' && styles.segmentButtonActive]}>
+                <Text
+                  style={[
+                    styles.segmentButtonText,
+                    viewMode === 'list' && styles.segmentButtonTextActive,
+                  ]}>
+                  List
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Map view"
+                accessibilityState={{ selected: viewMode === 'map' }}
+                onPress={() => setViewMode('map')}
+                style={[styles.segmentButton, viewMode === 'map' && styles.segmentButtonActive]}>
+                <Text
+                  style={[
+                    styles.segmentButtonText,
+                    viewMode === 'map' && styles.segmentButtonTextActive,
+                  ]}>
+                  Map
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
-          <View style={styles.binList}>
-            {filteredBins.map((bin) => (
-              <BinCard
-                key={bin.id}
-                bin={bin}
-                publicView={role === 'resident'}
-                onPress={() => setSelectedBin(bin)}
+          {viewMode === 'map' ? (
+            <View style={styles.mapWrapper}>
+              <GctsMapView
+                bins={filteredBins}
+                selectedBinId={selectedBin?.id}
+                onSelectBin={(bin) => setSelectedBin(bin)}
+                height={380}
               />
-            ))}
-            {liveBins.status === 'ready' && filteredBins.length === 0 && (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>No matching bins</Text>
-                <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
-              </View>
-            )}
-          </View>
+              <Text style={styles.mapHint}>
+                Tap any marker to view fill level, division, and report details.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.binList}>
+              {filteredBins.map((bin) => (
+                <BinCard
+                  key={bin.id}
+                  bin={bin}
+                  publicView={role === 'resident'}
+                  onPress={() => setSelectedBin(bin)}
+                />
+              ))}
+              {liveBins.status === 'ready' && filteredBins.length === 0 && (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyTitle}>No matching bins</Text>
+                  <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           <BinDetailModal
             bin={
@@ -401,10 +448,47 @@ const styles = StyleSheet.create({
   },
   listHeading: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 5,
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E8EDE9',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  segmentButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  segmentButtonActive: {
+    backgroundColor: palette.white,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.muted,
+  },
+  segmentButtonTextActive: {
+    color: palette.forest,
+  },
+  mapWrapper: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  mapHint: {
+    fontSize: 11,
+    color: palette.muted,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   listTitle: {
     color: palette.ink,

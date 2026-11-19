@@ -34,15 +34,17 @@ export function parseCollectionRoute(id: string, value: unknown): CollectionRout
     name,
     divisionId,
     vehicleId,
-    collectorUid,
     status,
     stops,
-    scheduledAt,
-    startedAt,
-    completedAt,
     createdAt,
     updatedAt,
   } = value;
+
+  // Optional fields — treat undefined (missing from Firestore) as null
+  const collectorUid = value.collectorUid ?? null;
+  const scheduledAt = value.scheduledAt ?? null;
+  const startedAt = value.startedAt ?? null;
+  const completedAt = value.completedAt ?? null;
 
   if (
     typeof code !== 'string'
@@ -75,7 +77,7 @@ export function parseCollectionRoute(id: string, value: unknown): CollectionRout
     name,
     divisionId,
     vehicleId,
-    collectorUid: collectorUid ?? null,
+    collectorUid: typeof collectorUid === 'string' ? collectorUid : null,
     status,
     stops: parsedStops,
     progressPercent: calculateRouteProgress(parsedStops),

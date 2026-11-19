@@ -30,11 +30,30 @@ export type RouteListState =
   | { status: 'offline'; message: string }
   | { status: 'error'; failure: RouteRepositoryFailure };
 
+export type CreateRouteStopInput = {
+  binId: string;
+  name: string;
+};
+
+export type CreateRouteInput = {
+  code: string;
+  name: string;
+  divisionId: string;
+  vehicleId: string;
+  collectorUid?: string | null;
+  stops: CreateRouteStopInput[];
+};
+
 export interface RouteRepository {
   subscribe(
     principal: AuthPrincipal,
     onStateChange: (state: RouteListState) => void
   ): () => void;
+
+  createRoute(
+    principal: AuthPrincipal,
+    input: CreateRouteInput
+  ): Promise<string>;
 
   assignCollector(
     principal: AuthPrincipal,

@@ -1,10 +1,10 @@
 import { NativeTabs } from 'expo-router/native-tabs';
 
 import { WorkspaceOverlays } from '@/features/gcts/components/app-page';
-import { useAppRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 
 export default function AppTabs() {
-  const { role } = useAppRole();
+  const { role } = useAppState();
   const resident = role === 'resident';
 
   return (
@@ -44,11 +44,6 @@ export default function AppTabs() {
             <NativeTabs.Trigger.Label>Reports</NativeTabs.Trigger.Label>
           </NativeTabs.Trigger>
         )}
-
-        <NativeTabs.Trigger name="settings">
-          <NativeTabs.Trigger.Icon md="settings" sf="gearshape.fill" />
-          <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-        </NativeTabs.Trigger>
       </NativeTabs>
       <WorkspaceOverlays />
     </>

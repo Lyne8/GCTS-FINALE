@@ -12,7 +12,7 @@ import { GctsIcon, type GctsIconName } from '@/features/gcts/components/gcts-ico
 import { WorkspaceOverlays } from '@/features/gcts/components/app-page';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
-import { useAppRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 
 type AppRoute = '/' | '/bins' | '/routes' | '/resident' | '/reports' | '/settings';
 
@@ -24,7 +24,7 @@ type NavigationItem = {
 };
 
 export default function AppTabs() {
-  const { role } = useAppRole();
+  const { role } = useAppState();
   const width = useResponsiveWidth();
   const resident = role === 'resident';
   const desktopAdmin = Platform.OS === 'web' && role === 'admin' && width >= 1100;
@@ -39,7 +39,6 @@ export default function AppTabs() {
   if (role === 'admin' || role === 'supervisor') {
     items.push({ name: 'reports', href: '/reports', icon: 'reports', label: 'Reports' });
   }
-  items.push({ name: 'settings', href: '/settings', icon: 'settings', label: 'Settings' });
 
   return (
     <>

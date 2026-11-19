@@ -1,5 +1,6 @@
 import { FirebaseError } from 'firebase/app';
 import {
+  addDoc,
   collection,
   doc,
   limit,
@@ -21,6 +22,7 @@ import {
 } from '@/features/gcts/data/route-mapper';
 import {
   RouteRepositoryError,
+  type CreateRouteInput,
   type RouteListState,
   type RouteRepository,
 } from '@/features/gcts/data/route-repository';
@@ -76,6 +78,102 @@ export class FirebaseRouteRepository implements RouteRepository {
     } catch (error) {
       onStateChange(toListState(error));
       return () => {};
+    }
+  }
+
+  async createRoute(
+    principal: AuthPrincipal,
+    input: CreateRouteInput
+  ): Promise<string> {
+    if (principal.role !== 'admin' && principal.role !== 'supervisor') {
+      throw new RouteRepositoryError({
+        kind: 'permission-denied',
+        message: 'Only supervisors and administrators can create routes.',
+      });
+    }
+
+    if (
+      principal.role === 'supervisor' &&
+      !principal.divisionIds.includes(input.divisionId)
+    ) {
+      throw new RouteRepositoryError({
+        kind: 'permission-denied',
+        message: 'Supervisors can only create routes in their assigned divisions.',
+      });
+    }
+
+    const trimmedCode = input.code.trim();
+    if (trimmedCode.length === 0 || trimmedCode.length > 32) {
+      throw new RouteRepositoryError({
+        kind: 'invalid-input',
+        message: 'A route code of up to 32 characters is required.',
+      });
+    }
+
+    const trimmedName = input.name.trim();
+    if (trimmedName.length === 0 || trimmedName.length > 100) {
+      throw new RouteRepositoryError({
+        kind: 'invalid-input',
+        message: 'A route name of up to 100 characters is required.',
+      });
+    }
+
+    const trimmedDivisionId = input.divisionId.trim();
+    if (trimmedDivisionId.length === 0 || trimmedDivisionId.length > 64) {
+      throw new RouteRepositoryError({
+        kind: 'invalid-input',
+        message: 'A valid division ID is required.',
+      });
+    }
+
+    const trimmedVehicleId = input.vehicleId.trim();
+    if (trimmedVehicleId.length === 0 || trimmedVehicleId.length > 64) {
+      throw new RouteRepositoryError({
+        kind: 'invalid-input',
+        message: 'A valid vehicle ID is required.',
+      });
+    }
+
+    if (!Array.isArray(input.stops) || input.stops.length === 0 || input.stops.length > 50) {
+      throw new RouteRepositoryError({
+        kind: 'invalid-input',
+        message: 'A route must contain between 1 and 50 stops.',
+      });
+    }
+
+    const formattedStops = input.stops.map((s) => ({
+      binId: s.binId.trim(),
+      name: s.name.trim(),
+      status: 'pending' as const,
+      collectedAt: null,
+      skipReason: null,
+    }));
+
+    const trimmedCollectorUid = input.collectorUid?.trim() || null;
+    const status = trimmedCollectorUid ? 'assigned' : 'draft';
+
+    try {
+      const db = getFirebaseFirestore();
+      const routesCol = collection(db, 'routes');
+      const payload = {
+        code: trimmedCode,
+        name: trimmedName,
+        divisionId: trimmedDivisionId,
+        vehicleId: trimmedVehicleId,
+        collectorUid: trimmedCollectorUid,
+        status,
+        stops: formattedStops,
+        progressPercent: 0,
+        scheduledAt: null,
+        startedAt: null,
+        completedAt: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      const newDocRef = await addDoc(routesCol, payload);
+      return newDocRef.id;
+    } catch (error) {
+      throw toRepositoryError(error);
     }
   }
 

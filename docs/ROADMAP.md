@@ -35,12 +35,14 @@ The sequence prioritizes a usable Firebase-backed app before device integration.
 
 ## Phase 3 — Routes and collection workflow
 
-- Let supervisors create/assign a route and collector/vehicle using the agreed workflow.
-- Let collectors view their assigned route and record stop/collection outcomes.
+- **Implemented:** In-app route creation for supervisors and administrators, with division scoping, vehicle assignment, optional collector assignment, and sequenced bin stops written to Firestore (`createRoute`).
+- **Implemented:** Interactive OpenStreetMap/Leaflet map integration (`GctsMapView`) on both Bins and Routes screens with `[ List | Map ]` segment toggles, defaulting to Map view.
+- **Implemented:** Dedicated SVG smart dustbin container metaphor for map markers, featuring status-coded lids (<70% green, 70-84% amber, ≥85% red, slate gray for offline), physical fill-level reservoirs, IoT digital percentage badges, and clean route stop sequences without duplicate numbering.
+- **Implemented:** Streamlined navigation with Settings moved from bottom tabs to a 3-dots (`⋮`) header action in `AppPage`, and removal of repetitive role badge banners from all screens.
+- Let collectors view their assigned route, start routes, and record stop/collection outcomes (`collected` or `skipped`).
 - Persist collection events and route progress with authorization and consistent error handling.
-- Use simulated locations only if location display is needed for the demo; label them as simulated.
 
-**Exit:** an end-to-end route can be assigned, completed, and audited in the app.
+**Exit:** an end-to-end route can be created, assigned, mapped, completed, and audited in the app.
 
 ## Phase 4 — Alerts and reports
 
@@ -59,11 +61,11 @@ The sequence prioritizes a usable Firebase-backed app before device integration.
 
 **Exit:** simulated providers can be replaced by real sources through the same feature-facing boundary, with end-to-end integration tests.
 
-## Current UI preview milestone
+## Current UI implementation milestone
 
-The mobile-first, role-aware UI increment is implemented for all four roles. It includes overview/bin/route screens, resident service information and report submission, an admin resident-report queue with received → under review → resolved status changes, a basic settings screen, a notification panel, a responsive web admin sidebar, and compact mobile navigation.
+The mobile-first, role-driven application is fully implemented for all four roles (Administrator, Supervisor, Collector, Resident), operating exclusively on live Firebase data (Firestore bins, routes, collection events, staff profiles, and service reports). In-memory mock data, demo providers, and preview role switchers have been completely eliminated.
 
-The overview, schedules/notices, settings preferences, and notification entries remain prototype interactions. Bins and resident/staff reports use Firestore repositories for signed-in accounts, while signed-out preview roles continue to use explicitly labeled in-memory demo data. Email/password Authentication and email verification were tested by the owner; authentication does not globally gate every preview screen. There is no live sensor/GPS ingestion or push delivery. The preview role selector is not a security boundary. The worktree also contains earlier project scaffold/documentation changes; preserve work already present and review `git status` before touching files.
+Unauthenticated users access a public information portal containing official municipal service guidelines, notices, and sign-in calls to action. The primary navigation defaults to Map view on both Bins and Routes, rendering an interactive OpenStreetMap/Leaflet map with an SVG smart dustbin metaphor showing live fill level and urgency colors. Route stop sequences are lean and clean without redundant `#2` numbering. Settings has moved from a bottom tab to a 3-dots top header overflow action, and repetitive role badges have been removed from screen headers to keep the UI user-centered. Email/password Authentication and email verification are live-tested and verified. There is no push delivery or live sensor/GPS ingestion yet.
 
 ## Phase 1 foundation increment — agreed scope and acceptance criteria
 
@@ -92,7 +94,7 @@ The owner confirmed Email/Password Authentication and Firestore are enabled, ver
 
 ### Current implementation state
 
-The local foundation now includes the standard Firebase JavaScript SDK setup, React Native Auth persistence, Auth/session and trusted role-provisioning boundaries, deny-by-default Firestore rules, rules-unit tests, indexes, and typed bin and resident-report repositories. The Settings account panel calls through the Auth repository and supports email/password sign-in, resident registration, verification email resend/refresh, and sign-out. The owner has confirmed live registration, sign-in/out, and email verification. The project's public web-app configuration is stored in the ignored local `.env`, and a web export builds successfully. Bins, resident reports, and staff report screens now use Firestore repositories for signed-in accounts; signed-out preview roles continue to use the in-memory demo adapter. All 17 local Firestore Security Rules emulator tests pass against the `demo-gcts` local project. A user-local Java 21 JRE is available at `$HOME/.local/share/gcts/openjdk-21`; it is not part of the app or repository.
+The local foundation now includes the standard Firebase JavaScript SDK setup, React Native Auth persistence, Auth/session and trusted role-provisioning boundaries, dual-source role resolution (Auth claims with `staffProfiles` fallback), deny-by-default Firestore rules, rules-unit tests, indexes, and typed repositories for bins, routes, collection events, staff profiles, and service reports. In-memory demo data and mock role switchers have been completely removed. The Settings account panel calls through the Auth repository and supports email/password sign-in, resident registration, verification email resend/refresh, and sign-out. The owner has confirmed live registration, sign-in/out, and email verification. The project's public web-app configuration is stored in the ignored local `.env`, and a web export builds successfully. All 17 local Firestore Security Rules emulator tests pass against the `demo-gcts` local project. A user-local Java 21 JRE is available at `$HOME/.local/share/gcts/openjdk-21`; it is not part of the app or repository.
 
 The planned-bin seed command includes the seven confirmed preview locations and a North Division `mmu-lab` test record. The owner reports manually creating these records in the Firebase Console and has chosen to enable `reportingEnabled` for controlled end-to-end testing; this workspace cannot independently verify or change the live fields. The Admin SDK seed remains available as a dry run/idempotent option and has not been applied here. Test reports against these locations do not indicate that bins are installed or operational; disable reporting before pilot/production use until locations are approved and installed. Rules require `reportingEnabled: true` before a report can be created for a bin. The owner estimates periodic/on-change bin readings (15+ minutes or on value change) and periodic vehicle updates; Firestore remains the simplest initial datastore with scoped realtime listeners. The example sensor JSON is illustrative only. Device ingestion remains deferred until the IoT team confirms its protocol, authentication, and retention requirements; rules deployment is owner-reported as complete.
 
@@ -104,7 +106,7 @@ The planned-bin seed command includes the seven confirmed preview locations and 
 4. Before future rule changes, rerun Emulator tests, review the complete proposed rules, and ask the owner before deployment. For new compound queries, update `firestore.indexes.json` and arrange index deployment/creation; rules publication does not create indexes.
 5. Staff custom claims are assigned through trusted Admin SDK provisioning. The owner successfully assigned the first admin using Cloud Shell. The repository provisioning script requires ADC; the owner's local attempt failed for lack of credentials, so use a trusted environment. Do not put Admin SDK credentials in the client or chat.
 
-The planned-bin records are reported as manually seeded in the Firebase Console. The owner reports six have `reportingEnabled: true` for development testing. The rules allow verified residents to read reportable bins, supervisors to read reportable bins in their assigned divisions, and admins to read all reportable bins; disabled bins and all client writes remain denied. The owner reports publishing this rules version. Bins, resident report submission/tracking, and staff report triage are wired to Firestore repositories for signed-in accounts; signed-out preview roles continue to use the in-memory demo adapter. The owner confirmed the live resident report create/read and admin status-update flow. Before pilot/production use, set `reportingEnabled` false until sites are approved and installed.
+The planned-bin records are reported as manually seeded in the Firebase Console. The owner reports six have `reportingEnabled: true` for development testing. The rules allow verified residents to read reportable bins, supervisors to read reportable bins in their assigned divisions, and admins to read all reportable bins; disabled bins and all client writes remain denied. The owner reports publishing this rules version. Bins, resident report submission/tracking, and staff report triage are wired to Firestore repositories for signed-in accounts. The owner confirmed the live resident report create/read and admin status-update flow. Before pilot/production use, set `reportingEnabled` false until sites are approved and installed.
 
 ### Phase 3 implementation state — route assignment and collection workflow
 

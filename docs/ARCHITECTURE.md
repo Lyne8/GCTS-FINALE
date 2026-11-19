@@ -70,15 +70,20 @@ Use Firestore as the current source of truth for application records and use its
 
 Treat the shared sensor JSON as an entity/payload sketch, not a deployed schema or source of real readings. Keep bin registry metadata, latest bin readings, vehicle snapshots, and route assignments in separate Firestore documents/collections. Keep Auth roles in trusted custom claims, never in client-writable profile data. A trusted ingestion component must authenticate devices, validate readings, and write canonical server timestamps; do not embed shared device credentials in the app. Keep device measurement time distinct from server receipt time. Configure reporting cadence on the device or trusted gateway; do not put it in Expo `.env` or expose it as client-controlled configuration. Reconsider Realtime Database only if measured cadence, latency, throughput, or cost requirements show Firestore is no longer a fit.
 
-## Current preview implementation
+## Live Firebase implementation & UI architecture
 
-- The role selector, resident reports, and report status transitions are held in the in-memory `DemoRoleProvider`; reloads clear them. This is demo state, not an auth/session implementation or a persistence layer.
-- Settings selections currently live in the Settings screen and reset when it unmounts. Persist preferences only after deciding which are user-level versus device/workspace-level.
-- The notification panel is a small illustrative activity list. It is not connected to the report queue, alert lifecycle, a notification repository, or push delivery.
-- Responsive web layout selection uses a client-side width hook with a stable server/initial render, so desktop navigation activates after hydration without a responsive-class mismatch.
-- Keep each preview behavior visibly honest while avoiding warning banners. `preview`/`demo` labels on example operations are preferable to claiming simulated values are live.
-- Firebase Auth has been live-tested by the owner. Bins, resident/staff reports, and operational routes use typed Firestore repositories for signed-in accounts; signed-out preview roles use the in-memory demo provider. The owner reports publishing the current rules and enabling the resident and supervisor `serviceReports` composite indexes. The owner confirmed that a resident report was submitted and read back, and a trusted admin viewed it and changed its status.
-- Operational route assignments and collection progress use `FirebaseRouteRepository` with strict document mapping and validation. Supervisors create and assign routes in their assigned divisions; collectors view only assigned routes, start them, and record stop outcomes (`collected` or `skipped`). Recording an outcome commits a transaction that writes an immutable `collectionEvents` audit record (`source: 'manual'`) and updates route stop status. Opening a stop does not record collection. `FirebaseStaffProfileRepository` provides real-time collector name resolution for assignment dialogs. All 17 Firestore rules tests pass in the local emulator suite. The owner has published the updated rules and confirmed the live collector round-trip.
+- The application operates exclusively on live Firebase services (Authentication, Cloud Firestore, and Security Rules). In-memory demo data, mock providers, and role switchers have been completely eliminated.
+- Unauthenticated users access an official municipal public service portal with guidance, notices, and sign-in calls to action; authenticated users have their roles resolved via Firebase Auth custom claims or matched `staffProfiles` documents.
+- Primary navigation is streamlined: Settings has moved from a bottom tab to a clean 3-dots overflow icon (`⋮`) in the top right header action area of `AppPage`, navigating directly to `/settings`.
+- Screen headers are user-centered: persistent role badge flags have been removed across all screens to keep the mobile interface lean and focused.
+- Map view is the default mode for both Bins and Routes screens. The interactive map uses Leaflet and OpenStreetMap (`react-native-webview` on mobile, iframe on web) with no external cloud billing dependencies.
+- Map markers utilize a dedicated SVG smart dustbin container metaphor:
+  - Lid handle, status-coded lid, and pointed anchor tip.
+  - Physical fill reservoir whose height reflects the bin's fill level percentage.
+  - High-contrast digital IoT display badge showing fill percentage (`78%` or `—` when sensor data is absent).
+  - Status color-coding: `<70%` green, `70–84%` amber, `≥85%` red, slate gray for unknown/offline.
+  - Route stop markers display a clean sequence circle badge (`1`, `2`, `3`...) on top and the collection outcome (`✓` or `✕`) or fill percentage in the container body, without repetitive stop numbering.
+- Operational route assignments and collection progress use `FirebaseRouteRepository` with strict document mapping and validation. Supervisors create and assign routes in their assigned divisions; collectors view only assigned routes, start them, and record stop outcomes (`collected` or `skipped`). Recording an outcome commits a transaction that writes an immutable `collectionEvents` audit record (`source: 'manual'`) and updates route stop status. Opening a stop does not record collection. `FirebaseStaffProfileRepository` provides real-time collector name resolution for assignment dialogs. All 17 Firestore rules tests pass in the local emulator suite.
 
 ## Mobile and web
 

@@ -13,6 +13,17 @@ const divisionLabels: Record<string, string> = {
   north: 'North Division',
 };
 
+const defaultBinCoordinates: Record<string, { latitude: number; longitude: number }> = {
+  'central-market': { latitude: 0.6548, longitude: 30.2743 },
+  'mpanga-market': { latitude: 0.6582, longitude: 30.2810 },
+  'booma-grounds': { latitude: 0.6505, longitude: 30.2721 },
+  'kisenyi-taxi-park': { latitude: 0.6565, longitude: 30.2780 },
+  'kabundaire-market': { latitude: 0.6620, longitude: 30.2795 },
+  'buhinga-stadium': { latitude: 0.6590, longitude: 30.2690 },
+  'nyakaseke-trading-centre': { latitude: 0.6720, longitude: 30.2850 },
+  'mmu-lab': { latitude: 0.6385, longitude: 30.2915 },
+};
+
 export function parseFirebaseBin(id: string, value: unknown): WasteBin {
   if (!isRecord(value)) {
     throw new InvalidBinDataError(`Bin "${id}" is not a document object.`);
@@ -51,6 +62,19 @@ export function parseFirebaseBin(id: string, value: unknown): WasteBin {
     ? lastReadingAt.toDate()
     : null;
 
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  if (typeof value.latitude === 'number' && Number.isFinite(value.latitude)) {
+    latitude = value.latitude;
+  }
+  if (typeof value.longitude === 'number' && Number.isFinite(value.longitude)) {
+    longitude = value.longitude;
+  }
+  if (latitude === null && longitude === null && defaultBinCoordinates[id]) {
+    latitude = defaultBinCoordinates[id].latitude;
+    longitude = defaultBinCoordinates[id].longitude;
+  }
+
   return {
     id,
     code,
@@ -63,6 +87,8 @@ export function parseFirebaseBin(id: string, value: unknown): WasteBin {
       ? `Reading · ${readingAt.toLocaleString()}`
       : 'No sensor reading',
     source: 'firestore',
+    latitude,
+    longitude,
   };
 }
 

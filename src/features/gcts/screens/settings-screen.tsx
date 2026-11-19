@@ -8,16 +8,18 @@ import { FirebaseAccountPanel } from '@/features/auth/components/firebase-accoun
 
 const divisions = ['All divisions', 'Central Division', 'North Division'];
 
-export function SettingsScreen() {
+export function SettingsContent() {
   const [selectedDivision, setSelectedDivision] = useState(divisions[0]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState(true);
 
   return (
-    <AppPage
-      eyebrow="PREFERENCES"
-      title="Settings"
-      subtitle="Set up your GCTS workspace the way you work.">
+    <>
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>Account</Text>
+        <FirebaseAccountPanel />
+      </View>
+
       <View style={styles.group}>
         <Text style={styles.groupTitle}>Workspace</Text>
         <View style={styles.card}>
@@ -62,11 +64,17 @@ export function SettingsScreen() {
           />
         </View>
       </View>
+    </>
+  );
+}
 
-      <View style={styles.group}>
-        <Text style={styles.groupTitle}>Account</Text>
-        <FirebaseAccountPanel />
-      </View>
+export function SettingsScreen() {
+  return (
+    <AppPage
+      eyebrow="PREFERENCES"
+      title="Settings"
+      subtitle="Set up your GCTS workspace the way you work.">
+      <SettingsContent />
     </AppPage>
   );
 }

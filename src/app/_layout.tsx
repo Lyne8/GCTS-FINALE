@@ -1,10 +1,10 @@
 import AppTabs from '@/components/app-tabs';
-import { DemoRoleProvider } from '@/features/gcts/state/demo-role-context';
+import { AppStateProvider } from '@/features/gcts/state/app-state-context';
 
 export default function TabLayout() {
   return (
-    <DemoRoleProvider>
+    <AppStateProvider>
       <AppTabs />
-    </DemoRoleProvider>
+    </AppStateProvider>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
@@ -12,11 +11,10 @@ import {
 } from '@/features/gcts/data/service-report-repository';
 import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
-import type { ServiceReport } from '@/features/gcts/domain/service-report';
+import type { ServiceReport, ServiceReportType as ResidentReportType } from '@/features/gcts/domain/service-report';
 import {
-  useDemoRole,
-  type ResidentReportType,
-} from '@/features/gcts/state/demo-role-context';
+  useAppState,
+} from '@/features/gcts/state/app-state-context';
 import { palette } from '@/features/gcts/palette';
 
 const issueTypes: { value: ResidentReportType; label: string }[] = [
@@ -34,7 +32,7 @@ const firebaseBinRepository = new FirebaseBinRepository();
 const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
 
 export function ResidentServicesScreen() {
-  const { role: previewRole } = useDemoRole();
+  const { role: previewRole, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
   const [type, setType] = useState<ResidentReportType>('overflowing_bin');
   const [location, setLocation] = useState('');
@@ -182,7 +180,7 @@ export function ResidentServicesScreen() {
             </Text>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.navigate('/settings')}
+              onPress={() => setSettingsVisible(true)}
               style={({ pressed }) => [styles.submitButton, pressed && styles.pressed, { marginTop: 14 }]}>
               <Text style={styles.submitButtonText}>Sign In or Register</Text>
             </Pressable>

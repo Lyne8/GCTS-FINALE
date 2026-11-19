@@ -13,6 +13,8 @@ export type WasteBin = {
   fillLevelPercent: number | null;
   lastUpdatedLabel: string;
   source: 'simulated' | 'firestore';
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export const DEMO_PRIORITY_THRESHOLD_PERCENT = 85;

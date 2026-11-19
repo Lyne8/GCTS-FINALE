@@ -1,28 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
+import { GctsMapView, type MapRouteStop } from '@/features/gcts/components/gcts-map-view';
+import type { BinListState } from '@/features/gcts/data/bin-repository';
+import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import { FirebaseRouteRepository } from '@/features/gcts/data/firebase-route-repository';
 import { FirebaseStaffProfileRepository } from '@/features/gcts/data/firebase-staff-profile-repository';
 import {
   RouteRepositoryError,
+  type CreateRouteInput,
   type RouteListState,
 } from '@/features/gcts/data/route-repository';
-import type {
-  StaffProfileState,
-} from '@/features/gcts/data/staff-profile-repository';
+import type { StaffProfileState } from '@/features/gcts/data/staff-profile-repository';
+import { getBinUrgency, type WasteBin } from '@/features/gcts/domain/bin';
 import type { CollectionRoute, RouteStatus } from '@/features/gcts/domain/route';
+import type { StaffProfile } from '@/features/gcts/domain/staff-profile';
 import { palette } from '@/features/gcts/palette';
-import { useDemoRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 
 const filters = ['All routes', 'In progress', 'Assigned', 'Completed'] as const;
 type RouteFilter = (typeof filters)[number];
@@ -42,15 +48,21 @@ const divisionNames: Record<string, string> = {
 
 const firebaseRouteRepository = new FirebaseRouteRepository();
 const firebaseStaffProfileRepository = new FirebaseStaffProfileRepository();
+const firebaseBinRepository = new FirebaseBinRepository();
 
 export function RoutesScreen() {
-  const { role: previewRole } = useDemoRole();
+  const { role: previewRole, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
 
   const [filter, setFilter] = useState<RouteFilter>('All routes');
   const [routesState, setRoutesState] = useState<RouteListState>({ status: 'loading' });
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
+  const [selectedMapRouteId, setSelectedMapRouteId] = useState<string | null>(null);
+  const [showCreateRouteModal, setShowCreateRouteModal] = useState(false);
+  const [binsState, setBinsState] = useState<BinListState>({ status: 'loading' });
 
   const [assigningRoute, setAssigningRoute] = useState<CollectionRoute | null>(null);
   const [selectedCollectorUid, setSelectedCollectorUid] = useState('');
@@ -77,6 +89,13 @@ export function RoutesScreen() {
     return firebaseStaffProfileRepository.subscribeStaff(setStaffState);
   }, [liveMode, principal]);
 
+  useEffect(() => {
+    if (!liveMode || !principal) {
+      return;
+    }
+    return firebaseBinRepository.subscribe(principal, setBinsState);
+  }, [liveMode, principal]);
+
   const availableCollectors = useMemo(() => {
     if (liveMode) {
       return staffState.status === 'ready' ? staffState.collectors : [];
@@ -99,6 +118,10 @@ export function RoutesScreen() {
     return routesState.routes;
   }, [liveMode, routesState]);
 
+  const availableBins = useMemo(() => {
+    return binsState.status === 'ready' ? binsState.bins : [];
+  }, [binsState]);
+
   const filteredRoutes = useMemo(() => {
     return sourceRoutes.filter((route) => {
       if (filter === 'All routes') return true;
@@ -108,6 +131,32 @@ export function RoutesScreen() {
       return true;
     });
   }, [filter, sourceRoutes]);
+
+  const activeMapRoute = useMemo(() => {
+    if (filteredRoutes.length === 0) return null;
+    return filteredRoutes.find((r) => r.id === selectedMapRouteId) ?? filteredRoutes[0];
+  }, [filteredRoutes, selectedMapRouteId]);
+
+  const mapRouteStops: MapRouteStop[] = useMemo(() => {
+    if (!activeMapRoute) return [];
+    return activeMapRoute.stops.map((stop) => {
+      const bin = availableBins.find((b) => b.id === stop.binId);
+      return {
+        binId: stop.binId,
+        name: stop.name,
+        status: stop.status,
+        latitude: bin?.latitude ?? null,
+        longitude: bin?.longitude ?? null,
+        fillLevelPercent: bin?.fillLevelPercent ?? null,
+        code: bin?.code ?? null,
+      };
+    });
+  }, [activeMapRoute, availableBins]);
+
+  const mapDivisionBins = useMemo(() => {
+    if (!activeMapRoute) return [];
+    return availableBins.filter((b) => b.divisionId === activeMapRoute.divisionId);
+  }, [activeMapRoute, availableBins]);
 
   const inProgressCount = sourceRoutes.filter((r) => r.status === 'in_progress').length;
   const completedCount = sourceRoutes.filter((r) => r.status === 'completed').length;
@@ -144,7 +193,7 @@ export function RoutesScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.navigate('/settings')}
+            onPress={() => setSettingsVisible(true)}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, { marginTop: 16 }]}>
             <Text style={styles.primaryButtonText}>Sign In</Text>
           </Pressable>
@@ -252,6 +301,12 @@ export function RoutesScreen() {
     }
   }
 
+  async function handleCreateRoute(input: CreateRouteInput) {
+    if (!liveMode || !principal) return;
+    await firebaseRouteRepository.createRoute(principal, input);
+    setActionMessage(null);
+  }
+
   return (
     <AppPage
       eyebrow="COLLECTION WORK"
@@ -299,7 +354,181 @@ export function RoutesScreen() {
         })}
       </View>
 
-      <View style={styles.routeList}>
+      <View style={styles.toolbarRow}>
+        <View style={styles.segmentContainer}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="List view"
+            accessibilityState={{ selected: viewMode === 'list' }}
+            onPress={() => setViewMode('list')}
+            style={[styles.segmentButton, viewMode === 'list' && styles.segmentButtonActive]}>
+            <Text
+              style={[
+                styles.segmentButtonText,
+                viewMode === 'list' && styles.segmentButtonTextActive,
+              ]}>
+              List
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Map view"
+            accessibilityState={{ selected: viewMode === 'map' }}
+            onPress={() => setViewMode('map')}
+            style={[styles.segmentButton, viewMode === 'map' && styles.segmentButtonActive]}>
+            <Text
+              style={[
+                styles.segmentButtonText,
+                viewMode === 'map' && styles.segmentButtonTextActive,
+              ]}>
+              Map
+            </Text>
+          </Pressable>
+        </View>
+
+        {(role === 'admin' || role === 'supervisor') && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setShowCreateRouteModal(true)}
+            style={({ pressed }) => [styles.createRouteButton, pressed && styles.pressed]}>
+            <Text style={styles.createRouteButtonPlus}>+</Text>
+            <Text style={styles.createRouteButtonText}>New Route</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {viewMode === 'map' ? (
+        <View style={styles.mapSection}>
+          {filteredRoutes.length > 0 ? (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.routePillScroll}>
+                {filteredRoutes.map((r) => {
+                  const isSelected = activeMapRoute?.id === r.id;
+                  return (
+                    <Pressable
+                      key={r.id}
+                      accessibilityRole="button"
+                      onPress={() => setSelectedMapRouteId(r.id)}
+                      style={[
+                        styles.routeSelectorPill,
+                        isSelected && styles.routeSelectorPillActive,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.routeSelectorPillText,
+                          isSelected && styles.routeSelectorPillTextActive,
+                        ]}>
+                        {r.code}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              {activeMapRoute && (
+                <View style={styles.activeRouteMapCard}>
+                  <View style={styles.activeRouteHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activeRouteTitle}>
+                        {activeMapRoute.code} – {activeMapRoute.name}
+                      </Text>
+                      <Text style={styles.activeRouteSubtitle}>
+                        {divisionNames[activeMapRoute.divisionId] ?? activeMapRoute.divisionId} • Vehicle {activeMapRoute.vehicleId} • {activeMapRoute.stops.length} stops ({activeMapRoute.progressPercent}% complete)
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusPill,
+                        activeMapRoute.status === 'in_progress' && styles.activePill,
+                        activeMapRoute.status === 'completed' && styles.completedPill,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.statusText,
+                          activeMapRoute.status === 'in_progress' && styles.activeText,
+                          activeMapRoute.status === 'completed' && styles.completedText,
+                        ]}>
+                        {statusLabels[activeMapRoute.status]}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <GctsMapView
+                    routeStops={mapRouteStops}
+                    bins={mapDivisionBins}
+                    height={380}
+                  />
+
+                  <View style={styles.mapStopsList}>
+                    <Text style={styles.mapStopsHeading}>Route Sequence</Text>
+                    {activeMapRoute.stops.map((stop, idx) => {
+                      const bin = availableBins.find((b) => b.id === stop.binId);
+                      const urgency = bin ? getBinUrgency(bin.fillLevelPercent) : 'unknown';
+                      const fillToneColor =
+                        stop.status === 'collected'
+                          ? palette.green
+                          : urgency === 'collection_due'
+                          ? palette.red
+                          : urgency === 'nearly_full'
+                          ? palette.amber
+                          : palette.muted;
+
+                      return (
+                        <View key={`${stop.binId}-${idx}`} style={styles.mapStopItem}>
+                          <View
+                            style={[
+                              styles.stopNumber,
+                              stop.status === 'collected' && styles.stopNumberCollected,
+                              stop.status === 'skipped' && styles.stopNumberSkipped,
+                            ]}>
+                            <Text
+                              style={[
+                                styles.stopNumberText,
+                                stop.status === 'collected' && styles.stopNumberTextCollected,
+                              ]}>
+                              {idx + 1}
+                            </Text>
+                          </View>
+                          <View style={styles.mapStopInfo}>
+                            <View style={styles.mapStopTitleRow}>
+                              <Text style={styles.mapStopName}>{stop.name}</Text>
+                              {bin?.fillLevelPercent !== null && bin?.fillLevelPercent !== undefined && (
+                                <View
+                                  style={[
+                                    styles.stopFillBadge,
+                                    { backgroundColor: `${fillToneColor}18`, borderColor: fillToneColor },
+                                  ]}>
+                                  <Text style={[styles.stopFillBadgeText, { color: fillToneColor }]}>
+                                    {bin.fillLevelPercent}% full
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.mapStopStatus}>
+                              {bin?.code ? `${bin.code} • ` : ''}
+                              {stop.status === 'collected'
+                                ? 'Collected'
+                                : stop.status === 'skipped'
+                                ? 'Skipped'
+                                : 'Pending collection'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </>
+          ) : (
+            <EmptyRoutes filter={filter} />
+          )}
+        </View>
+      ) : (
+        <View style={styles.routeList}>
         {(!liveMode && filteredRoutes.length === 0)
         || (liveMode &&
           (routesState.status === 'empty' ||
@@ -366,14 +595,46 @@ export function RoutesScreen() {
                               </Text>
                             </View>
                             <View style={styles.stopInfo}>
-                              <Text style={styles.stopName}>{stop.name}</Text>
-                              {stop.status !== 'pending' && (
-                                <Text style={styles.stopMeta}>
-                                  {stop.status === 'collected'
-                                    ? 'Collected'
-                                    : `Skipped${stop.skipReason ? `: ${stop.skipReason}` : ''}`}
-                                </Text>
-                              )}
+                              <View style={styles.mapStopTitleRow}>
+                                <Text style={styles.stopName}>{stop.name}</Text>
+                                {(() => {
+                                  const bin = availableBins.find((b) => b.id === stop.binId);
+                                  if (bin?.fillLevelPercent === null || bin?.fillLevelPercent === undefined) {
+                                    return null;
+                                  }
+                                  const urgency = getBinUrgency(bin.fillLevelPercent);
+                                  const fillToneColor =
+                                    stop.status === 'collected'
+                                      ? palette.green
+                                      : urgency === 'collection_due'
+                                      ? palette.red
+                                      : urgency === 'nearly_full'
+                                      ? palette.amber
+                                      : palette.muted;
+                                  return (
+                                    <View
+                                      style={[
+                                        styles.stopFillBadge,
+                                        { backgroundColor: `${fillToneColor}18`, borderColor: fillToneColor },
+                                      ]}>
+                                      <Text style={[styles.stopFillBadgeText, { color: fillToneColor }]}>
+                                        {bin.fillLevelPercent}%
+                                      </Text>
+                                    </View>
+                                  );
+                                })()}
+                              </View>
+                              <Text style={styles.stopMeta}>
+                                {(() => {
+                                  const bin = availableBins.find((b) => b.id === stop.binId);
+                                  const prefix = bin?.code ? `${bin.code} • ` : '';
+                                  if (stop.status === 'collected') return `${prefix}Collected`;
+                                  if (stop.status === 'skipped') {
+                                    return `${prefix}Skipped${stop.skipReason ? `: ${stop.skipReason}` : ''}`;
+                                  }
+                                  return `${prefix}Pending collection`;
+                                })()}
+                              </Text>
                             </View>
 
                             {/* Stop action controls for collector when route is in_progress */}
@@ -502,7 +763,22 @@ export function RoutesScreen() {
               );
             })
           : null}
-      </View>
+        </View>
+      )}
+
+      {/* Create Route Modal */}
+      {(role === 'admin' || role === 'supervisor') && (
+        <CreateRouteModal
+          visible={showCreateRouteModal}
+          onClose={() => setShowCreateRouteModal(false)}
+          onCreate={handleCreateRoute}
+          availableBins={availableBins}
+          availableCollectors={availableCollectors}
+          userRole={role}
+          userDivisionIds={principal?.divisionIds ?? []}
+          existingRouteCount={sourceRoutes.length}
+        />
+      )}
 
       {/* Assignment Modal */}
       <Modal
@@ -628,6 +904,329 @@ function SummaryCard({
       </View>
       <Text style={styles.summaryLabel}>{label}</Text>
     </View>
+  );
+}
+
+type CreateRouteModalProps = {
+  visible: boolean;
+  onClose: () => void;
+  onCreate: (input: CreateRouteInput) => Promise<void>;
+  availableBins: WasteBin[];
+  availableCollectors: StaffProfile[];
+  userRole: 'admin' | 'supervisor';
+  userDivisionIds: string[];
+  existingRouteCount: number;
+};
+
+function CreateRouteModal(props: CreateRouteModalProps) {
+  if (!props.visible) return null;
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={props.onClose}>
+      <CreateRouteDialog {...props} />
+    </Modal>
+  );
+}
+
+function CreateRouteDialog({
+  onClose,
+  onCreate,
+  availableBins,
+  availableCollectors,
+  userRole,
+  userDivisionIds,
+  existingRouteCount,
+}: Omit<CreateRouteModalProps, 'visible'>) {
+  const defaultDiv = userRole === 'supervisor' ? (userDivisionIds[0] ?? 'central') : 'central';
+  const [divisionId, setDivisionId] = useState<string>(defaultDiv);
+  const [code, setCode] = useState(`GCTS-R0${existingRouteCount + 1}`);
+  const [name, setName] = useState('');
+  const [vehicleId, setVehicleId] = useState('truck-fp-01');
+  const [collectorUid, setCollectorUid] = useState('');
+  const [stops, setStops] = useState<{ binId: string; name: string }[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const candidateBins = useMemo(() => {
+    const selectedBinIds = new Set(stops.map((s) => s.binId));
+    return availableBins.filter(
+      (bin) => bin.divisionId === divisionId && !selectedBinIds.has(bin.id)
+    );
+  }, [availableBins, divisionId, stops]);
+
+  function handleAddStop(bin: WasteBin) {
+    if (stops.length >= 50) return;
+    setStops((prev) => [...prev, { binId: bin.id, name: bin.name }]);
+  }
+
+  function handleRemoveStop(index: number) {
+    setStops((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
+  async function handleSubmit() {
+    setErrorMessage(null);
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
+      setErrorMessage('Route code is required.');
+      return;
+    }
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setErrorMessage('Route name is required.');
+      return;
+    }
+    const trimmedVehicle = vehicleId.trim();
+    if (!trimmedVehicle) {
+      setErrorMessage('Vehicle ID is required.');
+      return;
+    }
+    if (stops.length === 0) {
+      setErrorMessage('At least 1 bin stop is required.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onCreate({
+        code: trimmedCode,
+        name: trimmedName,
+        divisionId,
+        vehicleId: trimmedVehicle,
+        collectorUid: collectorUid.trim() ? collectorUid.trim() : null,
+        stops,
+      });
+      onClose();
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to create route.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <View style={styles.modalBackdrop}>
+      <View style={styles.createModalDialog}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.createModalScroll}>
+          <Text style={styles.modalTitle}>Create New Route</Text>
+          <Text style={styles.modalSubtitle}>
+            Configure an operational collection run with ordered bin stops.
+            </Text>
+
+            {errorMessage && (
+              <View style={styles.modalErrorBox}>
+                <Text style={styles.modalErrorText}>{errorMessage}</Text>
+              </View>
+            )}
+
+            {/* Division */}
+            <Text style={styles.formLabel}>Division</Text>
+            {userRole === 'admin' ? (
+              <View style={styles.pillRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setDivisionId('central');
+                    setStops([]);
+                  }}
+                  style={[
+                    styles.optionPill,
+                    divisionId === 'central' && styles.optionPillSelected,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.optionPillText,
+                      divisionId === 'central' && styles.optionPillTextSelected,
+                    ]}>
+                    Central Division
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setDivisionId('north');
+                    setStops([]);
+                  }}
+                  style={[
+                    styles.optionPill,
+                    divisionId === 'north' && styles.optionPillSelected,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.optionPillText,
+                      divisionId === 'north' && styles.optionPillTextSelected,
+                    ]}>
+                    North Division
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.readOnlyField}>
+                <Text style={styles.readOnlyFieldText}>
+                  {divisionNames[divisionId] ?? divisionId}
+                </Text>
+              </View>
+            )}
+
+            {/* Route Code & Name */}
+            <Text style={styles.formLabel}>Route Code</Text>
+            <TextInput
+              style={styles.textInput}
+              value={code}
+              onChangeText={setCode}
+              placeholder="e.g. GCTS-R03"
+              placeholderTextColor="#8B968F"
+              maxLength={32}
+            />
+
+            <Text style={styles.formLabel}>Route Name</Text>
+            <TextInput
+              style={styles.textInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Central Commercial Sweep"
+              placeholderTextColor="#8B968F"
+              maxLength={100}
+            />
+
+            {/* Vehicle Selection */}
+            <Text style={styles.formLabel}>Collection Vehicle</Text>
+            <View style={styles.pillRow}>
+              {['truck-fp-01', 'truck-fp-02', 'truck-fp-03', 'truck-fp-04'].map((v) => (
+                <Pressable
+                  key={v}
+                  accessibilityRole="button"
+                  onPress={() => setVehicleId(v)}
+                  style={[styles.optionPill, vehicleId === v && styles.optionPillSelected]}>
+                  <Text
+                    style={[
+                      styles.optionPillText,
+                      vehicleId === v && styles.optionPillTextSelected,
+                    ]}>
+                    {v}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Collector Assignment (Optional) */}
+            <Text style={styles.formLabel}>Assign Collector (Optional)</Text>
+            <View style={styles.collectorPickerList}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setCollectorUid('')}
+                style={[
+                  styles.collectorPickerItem,
+                  collectorUid === '' && styles.collectorPickerItemSelected,
+                ]}>
+                <Text
+                  style={[
+                    styles.collectorPickerItemText,
+                    collectorUid === '' && styles.collectorPickerItemTextSelected,
+                  ]}>
+                  Leave Unassigned (Draft)
+                </Text>
+              </Pressable>
+              {availableCollectors.map((collector) => (
+                <Pressable
+                  key={collector.uid}
+                  accessibilityRole="button"
+                  onPress={() => setCollectorUid(collector.uid)}
+                  style={[
+                    styles.collectorPickerItem,
+                    collectorUid === collector.uid && styles.collectorPickerItemSelected,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.collectorPickerItemText,
+                      collectorUid === collector.uid && styles.collectorPickerItemTextSelected,
+                    ]}>
+                    {collector.displayName} ({collector.email})
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Route Stops Selection */}
+            <Text style={styles.formLabel}>
+              Route Stops ({stops.length}/50)
+            </Text>
+            {stops.length > 0 ? (
+              <View style={styles.selectedStopsContainer}>
+                {stops.map((stop, index) => (
+                  <View key={`${stop.binId}-${index}`} style={styles.selectedStopRow}>
+                    <View style={styles.selectedStopNumber}>
+                      <Text style={styles.selectedStopNumberText}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.selectedStopName} numberOfLines={1}>
+                      {stop.name}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => handleRemoveStop(index)}
+                      style={styles.removeStopButton}>
+                      <Text style={styles.removeStopButtonText}>Remove</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.noStopsText}>
+                No stops added yet. Select bins below to build the route sequence.
+              </Text>
+            )}
+
+            {/* Add Bins */}
+            {candidateBins.length > 0 && (
+              <>
+                <Text style={styles.subFormLabel}>Available Division Bins</Text>
+                <View style={styles.candidateBinsList}>
+                  {candidateBins.map((bin) => (
+                    <Pressable
+                      key={bin.id}
+                      accessibilityRole="button"
+                      onPress={() => handleAddStop(bin)}
+                      style={styles.candidateBinItem}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.candidateBinName}>{bin.name}</Text>
+                        <Text style={styles.candidateBinMeta}>
+                          {bin.code} • Fill {bin.fillLevelPercent}%
+                        </Text>
+                      </View>
+                      <View style={styles.addStopBadge}>
+                        <Text style={styles.addStopBadgeText}>+ Add</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* Actions */}
+            <View style={[styles.modalButtonRow, { marginTop: 20 }]}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submitting}
+                onPress={onClose}
+                style={styles.modalCancelButton}>
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submitting}
+                onPress={() => void handleSubmit()}
+                style={[styles.modalConfirmButton, submitting && styles.actionButtonDisabled]}>
+                {submitting ? (
+                  <ActivityIndicator size="small" color={palette.white} />
+                ) : (
+                  <Text style={styles.modalConfirmButtonText}>Create Route</Text>
+                )}
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
   );
 }
 
@@ -1098,5 +1697,344 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.78,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 12,
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E8EDE9',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  segmentButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  segmentButtonActive: {
+    backgroundColor: palette.white,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.muted,
+  },
+  segmentButtonTextActive: {
+    color: palette.forest,
+  },
+  createRouteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: palette.forest,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  createRouteButtonPlus: {
+    color: palette.white,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  createRouteButtonText: {
+    color: palette.white,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mapSection: {
+    gap: 12,
+  },
+  routePillScroll: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  routeSelectorPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  routeSelectorPillActive: {
+    backgroundColor: palette.forest,
+    borderColor: palette.forest,
+  },
+  routeSelectorPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.muted,
+  },
+  routeSelectorPillTextActive: {
+    color: palette.white,
+  },
+  activeRouteMapCard: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 18,
+    backgroundColor: palette.white,
+    padding: 14,
+    gap: 14,
+  },
+  activeRouteHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  activeRouteTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: palette.ink,
+  },
+  activeRouteSubtitle: {
+    fontSize: 11,
+    color: palette.muted,
+    marginTop: 3,
+  },
+  mapStopsList: {
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF1EE',
+    paddingTop: 12,
+  },
+  mapStopsHeading: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: palette.ink,
+    letterSpacing: 0.3,
+  },
+  mapStopItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  mapStopInfo: {
+    flex: 1,
+  },
+  mapStopName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.ink,
+  },
+  mapStopStatus: {
+    fontSize: 10,
+    color: palette.muted,
+    marginTop: 1,
+  },
+  mapStopTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  stopFillBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  stopFillBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  createModalDialog: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '90%',
+    borderRadius: 18,
+    backgroundColor: palette.white,
+    overflow: 'hidden',
+  },
+  createModalScroll: {
+    padding: 20,
+    gap: 12,
+  },
+  modalErrorBox: {
+    backgroundColor: palette.redSoft,
+    padding: 10,
+    borderRadius: 8,
+  },
+  modalErrorText: {
+    color: palette.red,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  formLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: palette.ink,
+    marginTop: 4,
+  },
+  subFormLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: palette.muted,
+    marginTop: 8,
+  },
+  readOnlyField: {
+    backgroundColor: palette.canvas,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  readOnlyFieldText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: palette.ink,
+  },
+  textInput: {
+    backgroundColor: palette.canvas,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: palette.ink,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionPill: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.canvas,
+  },
+  optionPillSelected: {
+    borderColor: palette.forest,
+    backgroundColor: palette.mint,
+  },
+  optionPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: palette.muted,
+  },
+  optionPillTextSelected: {
+    color: palette.forest,
+  },
+  collectorPickerList: {
+    gap: 6,
+  },
+  collectorPickerItem: {
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.canvas,
+  },
+  collectorPickerItemSelected: {
+    borderColor: palette.forest,
+    backgroundColor: palette.mint,
+  },
+  collectorPickerItemText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: palette.ink,
+  },
+  collectorPickerItemTextSelected: {
+    color: palette.forest,
+    fontWeight: '800',
+  },
+  selectedStopsContainer: {
+    gap: 6,
+  },
+  selectedStopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: palette.canvas,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  selectedStopNumber: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: palette.forest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedStopNumberText: {
+    color: palette.white,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  selectedStopName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.ink,
+  },
+  removeStopButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: palette.redSoft,
+  },
+  removeStopButtonText: {
+    color: palette.red,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  noStopsText: {
+    fontSize: 12,
+    color: palette.muted,
+    fontStyle: 'italic',
+    paddingVertical: 6,
+  },
+  candidateBinsList: {
+    gap: 6,
+  },
+  candidateBinItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.canvas,
+  },
+  candidateBinName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: palette.ink,
+  },
+  candidateBinMeta: {
+    fontSize: 10,
+    color: palette.muted,
+    marginTop: 2,
+  },
+  addStopBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: palette.forest,
+  },
+  addStopBadgeText: {
+    color: palette.white,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

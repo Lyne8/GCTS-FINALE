@@ -43,6 +43,7 @@ const symbols = {
   info: { ios: 'info.circle.fill', android: 'info', web: 'info' },
   forward: { ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' },
   chevron: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
+  more: { ios: 'ellipsis', android: 'more_vert', web: 'more_vert' },
 } as const satisfies Record<string, SymbolViewProps['name']>;
 
 export type GctsIconName = keyof typeof symbols;

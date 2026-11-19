@@ -13,7 +13,7 @@ import { FirebaseRouteRepository } from '@/features/gcts/data/firebase-route-rep
 import type { ReportListState } from '@/features/gcts/data/service-report-repository';
 import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
 import { getBinUrgency } from '@/features/gcts/domain/bin';
-import { useDemoRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
 
@@ -45,7 +45,7 @@ const firebaseRouteRepository = new FirebaseRouteRepository();
 const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
 
 export function OverviewScreen() {
-  const { role: previewRole } = useDemoRole();
+  const { role: previewRole, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
   const width = useResponsiveWidth();
   const wideWeb = Platform.OS === 'web' && width >= 1100;
@@ -98,7 +98,7 @@ export function OverviewScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.navigate('/settings')}
+            onPress={() => setSettingsVisible(true)}
             style={({ pressed }) => [styles.welcomeCta, pressed && styles.pressed]}>
             <Text style={styles.welcomeCtaText}>Sign In / Register</Text>
             <GctsIcon name="forward" size={16} color={palette.white} />
@@ -149,7 +149,7 @@ export function OverviewScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.navigate('/settings')}
+            onPress={() => setSettingsVisible(true)}
             style={styles.residentAction}>
             <Text style={styles.residentActionText}>Go to Account & Settings</Text>
             <GctsIcon name="forward" size={16} color={palette.forest} />

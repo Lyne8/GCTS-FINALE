@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
@@ -10,12 +9,8 @@ import {
   type ReportListState,
 } from '@/features/gcts/data/service-report-repository';
 import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
-import type { ServiceReport } from '@/features/gcts/domain/service-report';
-import {
-  useDemoRole,
-  type ResidentReport,
-  type ResidentReportStatus,
-} from '@/features/gcts/state/demo-role-context';
+import type { ServiceReport, ServiceReportStatus as ResidentReportStatus } from '@/features/gcts/domain/service-report';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 import { palette } from '@/features/gcts/palette';
 
 export type DisplayReport = {
@@ -26,6 +21,8 @@ export type DisplayReport = {
   status: ResidentReportStatus;
   submittedLabel: string;
 };
+
+export type ResidentReport = DisplayReport;
 
 const filters = ['All reports', 'Received', 'Under review', 'Resolved'] as const;
 type ReportFilter = (typeof filters)[number];
@@ -44,7 +41,7 @@ const nextStatus: Partial<Record<ResidentReportStatus, ResidentReportStatus>> = 
 const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
 
 export function ReportsScreen() {
-  const { role: previewRole } = useDemoRole();
+  const { role: previewRole, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
   const [filter, setFilter] = useState<ReportFilter>('All reports');
   const [reportsState, setReportsState] = useState<ReportListState>({ status: 'loading' });
@@ -107,7 +104,7 @@ export function ReportsScreen() {
           </Text>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.navigate('/settings')}
+            onPress={() => setSettingsVisible(true)}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, { marginTop: 16 }]}>
             <Text style={styles.primaryButtonText}>Sign In</Text>
           </Pressable>

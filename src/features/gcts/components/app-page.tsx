@@ -13,16 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { GctsIcon, type GctsIconName } from '@/features/gcts/components/gcts-icon';
-import { useAppRole } from '@/features/gcts/state/demo-role-context';
+import { useAppState } from '@/features/gcts/state/app-state-context';
+import { SettingsContent } from '@/features/gcts/screens/settings-screen';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
-
-const roleTitles = {
-  admin: 'City administrator',
-  supervisor: 'Supervisor',
-  collector: 'Collector / driver',
-  resident: 'Resident',
-} as const;
 
 const notifications: { title: string; detail: string; time: string; icon: GctsIconName }[] = [
   { title: 'Collection due', detail: 'Central Market bin needs collection.', time: '4 min ago', icon: 'priority' },
@@ -37,14 +31,13 @@ type AppPageProps = PropsWithChildren<{
 }>;
 
 export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
+  const { setNotificationsVisible, setSettingsVisible } = useAppState();
   const { session } = useFirebaseAuth();
-  const { role, setNotificationsVisible } = useAppRole();
   const width = useResponsiveWidth();
+  const role = session.status === 'signed-in' ? session.principal.role : 'resident';
+  const isSignedIn = session.status === 'signed-in';
   const wideWeb = Platform.OS === 'web' && width >= 900;
   const desktopAdmin = Platform.OS === 'web' && role === 'admin' && width >= 1100;
-
-  const isSignedIn = session.status === 'signed-in';
-  const userRole = isSignedIn ? session.principal.role : null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -83,19 +76,11 @@ export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={isSignedIn ? `Account (${roleTitles[userRole ?? 'resident']})` : 'Sign in to account'}
-                onPress={() => router.navigate('/settings')}
-                style={({ pressed }) => [styles.roleButton, pressed && styles.pressed]}>
-                <View style={[styles.avatar, !isSignedIn && styles.avatarSignedOut]}>
-                  <GctsIcon name="person" size={17} color={isSignedIn ? palette.forest : palette.muted} />
-                </View>
-                <Text style={[styles.roleButtonLabel, width > 0 && width < 500 && styles.roleButtonLabelCompact]}>
-                  {isSignedIn
-                    ? (width > 0 && width < 500
-                        ? { admin: 'Admin', supervisor: 'Supervisor', collector: 'Collector', resident: 'Resident' }[userRole ?? 'resident']
-                        : roleTitles[userRole ?? 'resident'])
-                    : 'Sign in'}
-                </Text>
+                accessibilityLabel={isSignedIn ? `Settings (${session.principal.email ?? 'Signed in'})` : 'Settings'}
+                onPress={() => setSettingsVisible(true)}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+                <GctsIcon name="more" size={20} color={palette.forest} />
+                {isSignedIn && <View style={styles.signedInDot} />}
               </Pressable>
             </View>
           </View>
@@ -114,62 +99,101 @@ export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
 }
 
 export function WorkspaceOverlays() {
-  const { role, notificationsVisible, setNotificationsVisible } = useAppRole();
+  const {
+    role,
+    notificationsVisible,
+    setNotificationsVisible,
+    settingsVisible,
+    setSettingsVisible,
+  } = useAppState();
+
   const notificationActionLabel =
     role === 'admin' ? 'View reports' : role === 'resident' ? 'My reports' : 'View routes';
 
   return (
-    <Modal
-      animationType="fade"
-      transparent
-      visible={notificationsVisible}
-      onRequestClose={() => setNotificationsVisible(false)}>
-      <View style={styles.modalBackdrop}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close notifications"
-          onPress={() => setNotificationsVisible(false)}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.notificationDialog}>
-          <View style={styles.notificationHeader}>
-            <View>
-              <Text style={styles.dialogEyebrow}>UPDATES</Text>
-              <Text style={styles.notificationTitle}>Notifications</Text>
-            </View>
-            <Text style={styles.notificationCount}>Recent activity</Text>
-          </View>
-          {notifications.map(({ title, detail, time, icon }) => (
-            <View key={title} style={styles.notificationItem}>
-              <View style={styles.notificationItemIcon}>
-                <GctsIcon name={icon} size={18} />
-              </View>
-              <View style={styles.notificationItemCopy}>
-                <Text style={styles.notificationItemTitle}>{title}</Text>
-                <Text style={styles.notificationItemDetail}>{detail}</Text>
-                <Text style={styles.notificationItemTime}>{time}</Text>
-              </View>
-            </View>
-          ))}
+    <>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={notificationsVisible}
+        onRequestClose={() => setNotificationsVisible(false)}>
+        <View style={styles.modalBackdrop}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => {
-              setNotificationsVisible(false);
-              router.navigate(
-                role === 'admin'
-                  ? '/reports'
-                  : role === 'resident'
-                    ? '/resident'
-                    : '/routes'
-              );
-            }}
-            style={styles.notificationAction}>
-            <Text style={styles.notificationActionText}>{notificationActionLabel}</Text>
-            <GctsIcon name="chevron" size={16} color={palette.forest} />
-          </Pressable>
+            accessibilityLabel="Close notifications"
+            onPress={() => setNotificationsVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.notificationDialog}>
+            <View style={styles.notificationHeader}>
+              <View>
+                <Text style={styles.dialogEyebrow}>UPDATES</Text>
+                <Text style={styles.notificationTitle}>Notifications</Text>
+              </View>
+              <Text style={styles.notificationCount}>Recent activity</Text>
+            </View>
+            {notifications.map(({ title, detail, time, icon }) => (
+              <View key={title} style={styles.notificationItem}>
+                <View style={styles.notificationItemIcon}>
+                  <GctsIcon name={icon} size={18} />
+                </View>
+                <View style={styles.notificationItemCopy}>
+                  <Text style={styles.notificationItemTitle}>{title}</Text>
+                  <Text style={styles.notificationItemDetail}>{detail}</Text>
+                  <Text style={styles.notificationItemTime}>{time}</Text>
+                </View>
+              </View>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setNotificationsVisible(false);
+                router.navigate(
+                  role === 'admin'
+                    ? '/reports'
+                    : role === 'resident'
+                      ? '/resident'
+                      : '/routes'
+                );
+              }}
+              style={styles.notificationAction}>
+              <Text style={styles.notificationActionText}>{notificationActionLabel}</Text>
+              <GctsIcon name="chevron" size={16} color={palette.forest} />
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        presentationStyle="pageSheet"
+        visible={settingsVisible}
+        onRequestClose={() => setSettingsVisible(false)}>
+        <SafeAreaView style={styles.settingsModalSafeArea} edges={['top', 'left', 'right']}>
+          <View style={styles.settingsModalHeader}>
+            <View>
+              <Text style={styles.dialogEyebrow}>ACCOUNT & PREFERENCES</Text>
+              <Text style={styles.settingsModalTitle}>Settings</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+              onPress={() => setSettingsVisible(false)}
+              style={({ pressed }) => [styles.settingsDoneButton, pressed && styles.pressed]}>
+              <Text style={styles.settingsDoneButtonText}>Done</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={styles.settingsModalScroll}
+            contentContainerStyle={styles.settingsModalScrollContent}
+            keyboardShouldPersistTaps="handled">
+            <View style={styles.settingsModalContent}>
+              <SettingsContent />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
@@ -242,18 +266,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 1,
   },
-  roleButton: {
-    minHeight: 40,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 22,
-    backgroundColor: palette.white,
-  },
   topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -278,24 +290,16 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: palette.red,
   },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: palette.mint,
-  },
-  avatarSignedOut: {
-    backgroundColor: '#EEF2EE',
-  },
-  roleButtonLabel: {
-    color: palette.ink,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  roleButtonLabelCompact: {
-    fontSize: 11,
+  signedInDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: palette.forest,
+    borderWidth: 1.5,
+    borderColor: palette.white,
   },
   heading: {
     marginTop: 26,
@@ -412,6 +416,49 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1,
     fontWeight: '800',
+  },
+  settingsModalSafeArea: {
+    flex: 1,
+    backgroundColor: palette.canvas,
+  },
+  settingsModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.border,
+    backgroundColor: palette.white,
+  },
+  settingsModalTitle: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  settingsDoneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: palette.mint,
+  },
+  settingsDoneButtonText: {
+    color: palette.forest,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  settingsModalScroll: {
+    flex: 1,
+  },
+  settingsModalScrollContent: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  settingsModalContent: {
+    width: '100%',
+    maxWidth: 720,
+    paddingHorizontal: 20,
   },
   pressed: {
     opacity: 0.75,
