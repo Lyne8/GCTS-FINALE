@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
-import { demoBins } from '@/features/gcts/data/demo-bins';
 import { type BinListState } from '@/features/gcts/data/bin-repository';
 import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import {
@@ -34,7 +34,7 @@ const firebaseBinRepository = new FirebaseBinRepository();
 const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
 
 export function ResidentServicesScreen() {
-  const { role: previewRole, residentReports, addResidentReport } = useDemoRole();
+  const { role: previewRole } = useDemoRole();
   const { session } = useFirebaseAuth();
   const [type, setType] = useState<ResidentReportType>('overflowing_bin');
   const [location, setLocation] = useState('');
@@ -61,31 +61,24 @@ export function ResidentServicesScreen() {
 
   const role = principal?.role ?? previewRole;
   const liveMode = principal?.role === 'resident';
-  const bins = liveMode
-    ? binsState.status === 'ready'
-      ? binsState.bins
-      : []
-    : demoBins;
+  const bins = liveMode && binsState.status === 'ready' ? binsState.bins : [];
   const reports = useMemo(() => {
-    if (!liveMode) {
-      return residentReports;
-    }
-    if (reportsState.status !== 'ready') {
+    if (!liveMode || reportsState.status !== 'ready') {
       return [];
     }
     return reportsState.reports.map(toDisplayReport);
-  }, [liveMode, residentReports, reportsState]);
+  }, [liveMode, reportsState]);
 
   if (session.status === 'loading') {
     return (
       <AppPage eyebrow="RESIDENT SERVICES" title="Report an issue" subtitle="Checking account status...">
-        <DataMessage message="Checking Firebase account..." />
+        <DataMessage message="Checking account..." />
       </AppPage>
     );
   }
   if (session.status === 'error') {
     return (
-      <AppPage eyebrow="RESIDENT SERVICES" title="Report an issue" subtitle="Firebase account status is unavailable.">
+      <AppPage eyebrow="RESIDENT SERVICES" title="Report an issue" subtitle="Account status is temporarily unavailable.">
         <DataMessage message={session.failure.message} />
       </AppPage>
     );
@@ -95,12 +88,12 @@ export function ResidentServicesScreen() {
     return (
       <AppPage
         eyebrow="RESIDENT SERVICES"
-        title="Resident reports"
-        subtitle="This preview workflow is available in the Resident role.">
+        title="Resident Services"
+        subtitle="Public service information and citizen reporting.">
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Switch preview role</Text>
+          <Text style={styles.infoTitle}>Staff Account</Text>
           <Text style={styles.infoCopy}>
-            Use the role selector at the top of the screen to preview resident services.
+            You are signed in as municipal staff. To review incoming resident reports, use the Reports tab.
           </Text>
         </View>
       </AppPage>
@@ -118,43 +111,36 @@ export function ResidentServicesScreen() {
       return;
     }
 
-    if (liveMode) {
-      if (!principal?.emailVerified) {
-        setConfirmation('Verify your email before submitting a report.');
-        return;
-      }
-
-      setSubmitting(true);
-      setConfirmation('');
-      try {
-        await firebaseServiceReportRepository.create(principal, {
-          binId: selectedBin.id,
-          divisionId: selectedBin.divisionId,
-          type,
-          location: selectedBin.name,
-          details: details.trim(),
-        });
-        setDetails('');
-        setConfirmation('Your report was submitted to GCTS.');
-      } catch (error) {
-        setConfirmation(
-          error instanceof ServiceReportRepositoryError
-            ? error.failure.message
-            : 'The report could not be submitted. Try again or contact the project administrator.'
-        );
-      } finally {
-        setSubmitting(false);
-      }
+    if (!liveMode || !principal) {
       return;
     }
 
-    addResidentReport({
-      type,
-      location: selectedBin.name,
-      details: details.trim(),
-    });
-    setDetails('');
-    setConfirmation('Preview report received. This report is stored only in this session.');
+    if (!principal.emailVerified) {
+      setConfirmation('Verify your email before submitting a report.');
+      return;
+    }
+
+    setSubmitting(true);
+    setConfirmation('');
+    try {
+      await firebaseServiceReportRepository.create(principal, {
+        binId: selectedBin.id,
+        divisionId: selectedBin.divisionId,
+        type,
+        location: selectedBin.name,
+        details: details.trim(),
+      });
+      setDetails('');
+      setConfirmation('Your report was submitted to GCTS.');
+    } catch (error) {
+      setConfirmation(
+        error instanceof ServiceReportRepositoryError
+          ? error.failure.message
+          : 'The report could not be submitted. Try again or contact the project administrator.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -162,10 +148,6 @@ export function ResidentServicesScreen() {
       eyebrow="RESIDENT SERVICES"
       title="Report an issue"
       subtitle="Share a collection concern and check service information for your area.">
-      <DataMessage
-        message={liveMode ? 'LIVE FIRESTORE REPORTS' : 'PREVIEW MODE · reports are in memory'}
-        tone="info"
-      />
       {liveMode && !principal.emailVerified && (
         <DataMessage message="Verify your email in Settings before submitting or viewing reports." />
       )}
@@ -189,126 +171,150 @@ export function ResidentServicesScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Submit a collection concern</Text>
-        <View style={styles.formCard}>
-          <Text style={styles.fieldLabel}>What happened?</Text>
-          <View style={styles.choiceRow}>
-            {issueTypes.map((option) => {
-              const selected = type === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => setType(option.value)}
-                  style={[styles.choiceChip, selected && styles.choiceChipSelected]}>
-                  <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        {!liveMode ? (
+          <View style={styles.formCard}>
+            <View style={styles.cardTitleRow}>
+              <GctsIcon name="report" size={20} color={palette.forest} />
+              <Text style={styles.infoTitle}>Resident Service Reporting</Text>
+            </View>
+            <Text style={styles.infoCopy}>
+              Sign in or register as a resident to report overflowing bins or missed collections, and track municipal updates in real time.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.navigate('/settings')}
+              style={({ pressed }) => [styles.submitButton, pressed && styles.pressed, { marginTop: 14 }]}>
+              <Text style={styles.submitButtonText}>Sign In or Register</Text>
+            </Pressable>
           </View>
+        ) : (
+          <View style={styles.formCard}>
+            <Text style={styles.fieldLabel}>What happened?</Text>
+            <View style={styles.choiceRow}>
+              {issueTypes.map((option) => {
+                const selected = type === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setType(option.value)}
+                    style={[styles.choiceChip, selected && styles.choiceChipSelected]}>
+                    <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-          <Text style={styles.fieldLabel}>Where is the issue?</Text>
-          {liveMode && binsState.status === 'loading' && (
-            <DataMessage message="Loading reportable bin locations..." />
-          )}
-          {liveMode && binsState.status === 'empty' && (
-            <DataMessage message="No reportable bin locations are currently available." />
-          )}
-          {liveMode && binsState.status === 'permission-denied' && (
-            <DataMessage message={binsState.message} />
-          )}
-          {liveMode && binsState.status === 'offline' && (
-            <DataMessage message={binsState.message} />
-          )}
-          {liveMode && binsState.status === 'error' && (
-            <DataMessage message={binsState.failure.message} />
-          )}
-          {liveMode && binsState.status === 'ready' && binsState.source === 'cache' && (
-            <DataMessage message="Showing cached bin locations; they may be out of date." />
-          )}
-          <View style={styles.locationOptions}>
-            {bins.map((bin) => {
-              const selected = location === bin.id;
-              return (
-                <Pressable
-                  key={bin.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => setLocation(bin.id)}
-                  style={[styles.locationOption, selected && styles.locationOptionSelected]}>
-                  <Text
-                    style={[
-                      styles.locationOptionText,
-                      selected && styles.locationOptionTextSelected,
-                    ]}>
-                    {bin.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+            <Text style={styles.fieldLabel}>Where is the issue?</Text>
+            {binsState.status === 'loading' && (
+              <DataMessage message="Loading reportable bin locations..." />
+            )}
+            {binsState.status === 'empty' && (
+              <DataMessage message="No reportable bin locations are currently available." />
+            )}
+            {binsState.status === 'permission-denied' && (
+              <DataMessage message={binsState.message} />
+            )}
+            {binsState.status === 'offline' && (
+              <DataMessage message={binsState.message} />
+            )}
+            {binsState.status === 'error' && (
+              <DataMessage message={binsState.failure.message} />
+            )}
+            {binsState.status === 'ready' && binsState.source === 'cache' && (
+              <DataMessage message="Offline mode: showing saved locations." />
+            )}
+            <View style={styles.locationOptions}>
+              {bins.map((bin) => {
+                const selected = location === bin.id;
+                return (
+                  <Pressable
+                    key={bin.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setLocation(bin.id)}
+                    style={[styles.locationOption, selected && styles.locationOptionSelected]}>
+                    <Text
+                      style={[
+                        styles.locationOptionText,
+                        selected && styles.locationOptionTextSelected,
+                      ]}>
+                      {bin.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-          <Text style={styles.fieldLabel}>Additional details</Text>
-          <TextInput
-            accessibilityLabel="Additional issue details"
-            value={details}
-            onChangeText={(value) => {
-              setDetails(value);
-              setConfirmation('');
-            }}
-            placeholder="Add a short description"
-            placeholderTextColor="#8B968F"
-            multiline
-            maxLength={300}
-            textAlignVertical="top"
-            style={styles.detailsInput}
-          />
-          <Text style={styles.characterCount}>{details.length}/300</Text>
+            <Text style={styles.fieldLabel}>Additional details</Text>
+            <TextInput
+              accessibilityLabel="Additional issue details"
+              value={details}
+              onChangeText={(value) => {
+                setDetails(value);
+                setConfirmation('');
+              }}
+              placeholder="Add a short description"
+              placeholderTextColor="#8B968F"
+              multiline
+              maxLength={300}
+              textAlignVertical="top"
+              style={styles.detailsInput}
+            />
+            <Text style={styles.characterCount}>{details.length}/300</Text>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{
-              disabled: !location || details.trim().length === 0 || submitting
-                || (liveMode && (!principal.emailVerified || binsState.status !== 'ready')),
-            }}
-            disabled={
-              !location
-              || details.trim().length === 0
-              || submitting
-              || (liveMode && (!principal.emailVerified || binsState.status !== 'ready'))
-            }
-            onPress={() => void submitReport()}
-            style={({ pressed }) => [
-              styles.submitButton,
-              (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: !location || details.trim().length === 0 || submitting
+                  || (!principal.emailVerified || binsState.status !== 'ready'),
+              }}
+              disabled={
                 !location
                 || details.trim().length === 0
                 || submitting
-                || (liveMode && (!principal.emailVerified || binsState.status !== 'ready'))
-              ) && styles.submitButtonDisabled,
-              pressed && styles.pressed,
-            ]}>
-            <Text style={styles.submitButtonText}>
-              {submitting ? 'Submitting...' : 'Submit report'}
-            </Text>
-          </Pressable>
-          {confirmation.length > 0 && (
-            <Text accessibilityLiveRegion="polite" style={styles.confirmation}>
-              {confirmation}
-            </Text>
-          )}
-        </View>
+                || (!principal.emailVerified || binsState.status !== 'ready')
+              }
+              onPress={() => void submitReport()}
+              style={({ pressed }) => [
+                styles.submitButton,
+                (
+                  !location
+                  || details.trim().length === 0
+                  || submitting
+                  || (!principal.emailVerified || binsState.status !== 'ready')
+                ) && styles.submitButtonDisabled,
+                pressed && styles.pressed,
+              ]}>
+              <Text style={styles.submitButtonText}>
+                {submitting ? 'Submitting...' : 'Submit report'}
+              </Text>
+            </Pressable>
+            {confirmation.length > 0 && (
+              <Text accessibilityLiveRegion="polite" style={styles.confirmation}>
+                {confirmation}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
 
       <View style={styles.section}>
         <View style={styles.reportsHeading}>
           <Text style={styles.sectionTitle}>My submitted reports</Text>
           <Text style={styles.reportCount}>
-            {liveMode && reportsState.status !== 'ready' ? '—' : reports.length}
+            {!liveMode || reportsState.status !== 'ready' ? '—' : reports.length}
           </Text>
         </View>
+        {!liveMode && (
+          <View style={styles.emptyReports}>
+            <Text style={styles.emptyTitle}>Sign in to track your reports</Text>
+            <Text style={styles.emptyCopy}>Your history of submitted service requests will appear here once signed in.</Text>
+          </View>
+        )}
         {liveMode && reportsState.status === 'loading' ? (
           <DataMessage message="Loading your reports..." />
         ) : null}
@@ -328,11 +334,9 @@ export function ResidentServicesScreen() {
           <DataMessage message={reportsState.failure.message} />
         )}
         {liveMode && reportsState.status === 'ready' && reportsState.source === 'cache' && (
-          <DataMessage message="Showing cached reports; they may be out of date." />
+          <DataMessage message="Offline mode: showing saved reports." />
         )}
-        {(!liveMode && reports.length === 0) || (liveMode && reportsState.status === 'empty')
-          ? null
-          : (!liveMode || reportsState.status === 'ready') && reports.length > 0 ? (
+        {liveMode && reportsState.status === 'ready' && reports.length > 0 ? (
           <View style={styles.reportList}>
             {reports.map((report) => (
               <View key={report.id} style={styles.reportCard}>

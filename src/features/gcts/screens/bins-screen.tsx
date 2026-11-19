@@ -8,11 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { router } from 'expo-router';
 
 import { AppPage } from '@/features/gcts/components/app-page';
 import { BinCard } from '@/features/gcts/components/bin-card';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
-import { demoBins } from '@/features/gcts/data/demo-bins';
 import type { BinListState } from '@/features/gcts/data/bin-repository';
 import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import {
@@ -34,7 +34,6 @@ const filters: { value: BinFilter; label: string }[] = [
   { value: 'available', label: 'Available' },
 ];
 
-const collectorBinIds = new Set(['central-market', 'mpanga-market', 'kabundaire-market']);
 const firebaseBinRepository = new FirebaseBinRepository();
 
 export function BinsScreen() {
@@ -58,20 +57,14 @@ export function BinsScreen() {
   }
   if (session.status === 'error') {
     return (
-      <AppPage eyebrow="BIN MONITORING" title="Bins" subtitle="Firebase account status is unavailable.">
+      <AppPage eyebrow="BIN MONITORING" title="Bins" subtitle="Account status is temporarily unavailable.">
         <DataMessage message={session.failure.message} />
       </AppPage>
     );
   }
 
   const role = principal?.role ?? previewRole;
-  const roleBins = principal
-    ? liveBins.status === 'ready'
-      ? liveBins.bins
-      : []
-    : role === 'collector'
-      ? demoBins.filter((bin) => collectorBinIds.has(bin.id))
-      : demoBins;
+  const roleBins = principal && liveBins.status === 'ready' ? liveBins.bins : [];
   const counts = {
     all: roleBins.length,
     collection_due: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due')
@@ -98,15 +91,27 @@ export function BinsScreen() {
           ? 'Check public bin locations and status.'
           : 'Browse fill levels by location and collection priority.'
       }>
-      <DataMessage
-        message={principal ? 'LIVE FIRESTORE DATA' : 'PREVIEW DATA · simulated readings'}
-        tone="info"
-      />
-      {principal && liveBins.status === 'loading' && (
-        <DataMessage message="Loading bin locations..." />
-      )}
-      {principal && (
+      {!principal ? (
+        <View style={styles.promptCard}>
+          <View style={styles.promptIcon}>
+            <GctsIcon name="bins" size={24} color={palette.forest} />
+          </View>
+          <Text style={styles.promptTitle}>Public Bin Locations</Text>
+          <Text style={styles.promptCopy}>
+            Verified residents and city collection staff can view live bin status, monitor collection urgency, and report issues across Fort Portal.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.navigate('/settings')}
+            style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
+            <Text style={styles.ctaButtonText}>Sign In or Register</Text>
+          </Pressable>
+        </View>
+      ) : (
         <>
+          {liveBins.status === 'loading' && (
+            <DataMessage message="Loading bin locations..." />
+          )}
           {liveBins.status === 'empty' && (
             <DataMessage message="No reportable bin records are available." />
           )}
@@ -118,101 +123,96 @@ export function BinsScreen() {
             <DataMessage message={liveBins.failure.message} />
           )}
           {liveBins.status === 'ready' && liveBins.source === 'cache' && (
-            <DataMessage message="Showing cached Firestore data; it may be out of date." />
+            <DataMessage message="Offline mode: showing saved data." />
           )}
+
+          <View style={styles.summaryRow}>
+            <SummaryCard value={String(counts.collection_due)} label="Collection due" tone="red" />
+            <SummaryCard value={String(counts.nearly_full)} label="Nearly full" tone="amber" />
+            <SummaryCard value={String(counts.available)} label="Available" tone="green" />
+          </View>
+
+          <View style={styles.searchBox}>
+            <GctsIcon name="search" size={19} color={palette.muted} />
+            <TextInput
+              accessibilityLabel="Search bins"
+              placeholder="Search bin or area"
+              placeholderTextColor="#8B968F"
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+              style={styles.searchInput}
+            />
+            {query.length > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                onPress={() => setQuery('')}
+                hitSlop={8}>
+                <GctsIcon name="close" size={17} color={palette.muted} />
+              </Pressable>
+            )}
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filters}>
+            {filters.map((item) => {
+              const selected = filter === item.value;
+              return (
+                <Pressable
+                  key={item.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => setFilter(item.value)}
+                  style={[styles.filterChip, selected && styles.filterChipSelected]}>
+                  <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
+                    {item.label}
+                  </Text>
+                  <Text style={[styles.filterCount, selected && styles.filterTextSelected]}>
+                    {counts[item.value]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.listHeading}>
+            <Text style={styles.listTitle}>
+              {filter === 'all' ? 'All locations' : filters.find((item) => item.value === filter)?.label}
+            </Text>
+            <Text style={styles.listCount}>{filteredBins.length} shown</Text>
+          </View>
+
+          <View style={styles.binList}>
+            {filteredBins.map((bin) => (
+              <BinCard
+                key={bin.id}
+                bin={bin}
+                publicView={role === 'resident'}
+                onPress={() => setSelectedBin(bin)}
+              />
+            ))}
+            {liveBins.status === 'ready' && filteredBins.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>No matching bins</Text>
+                <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
+              </View>
+            )}
+          </View>
+
+          <BinDetailModal
+            bin={
+              liveBins.status === 'ready'
+                ? liveBins.bins.find((bin) => bin.id === selectedBin?.id) ?? null
+                : selectedBin
+            }
+            publicView={role === 'resident'}
+            onClose={() => setSelectedBin(null)}
+          />
         </>
       )}
-      <View style={styles.summaryRow}>
-        <SummaryCard value={String(counts.collection_due)} label="Collection due" tone="red" />
-        <SummaryCard value={String(counts.nearly_full)} label="Nearly full" tone="amber" />
-        <SummaryCard value={String(counts.available)} label="Available" tone="green" />
-      </View>
-
-      <View style={styles.searchBox}>
-        <GctsIcon name="search" size={19} color={palette.muted} />
-        <TextInput
-          accessibilityLabel="Search bins"
-          placeholder="Search bin or area"
-          placeholderTextColor="#8B968F"
-          value={query}
-          onChangeText={setQuery}
-          returnKeyType="search"
-          style={styles.searchInput}
-        />
-        {query.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-            onPress={() => setQuery('')}
-            hitSlop={8}>
-            <GctsIcon name="close" size={17} color={palette.muted} />
-          </Pressable>
-        )}
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filters}>
-        {filters.map((item) => {
-          const selected = filter === item.value;
-          return (
-            <Pressable
-              key={item.value}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              onPress={() => setFilter(item.value)}
-              style={[styles.filterChip, selected && styles.filterChipSelected]}>
-              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
-                {item.label}
-              </Text>
-              <Text style={[styles.filterCount, selected && styles.filterTextSelected]}>
-                {counts[item.value]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <View style={styles.listHeading}>
-        <Text style={styles.listTitle}>
-          {filter === 'all' ? 'All locations' : filters.find((item) => item.value === filter)?.label}
-        </Text>
-        <Text style={styles.listCount}>{filteredBins.length} shown</Text>
-      </View>
-
-      <View style={styles.binList}>
-        {filteredBins.map((bin) => (
-          <BinCard
-            key={bin.id}
-            bin={bin}
-            publicView={role === 'resident'}
-            onPress={() => setSelectedBin(bin)}
-          />
-        ))}
-        {filteredBins.length === 0 && !principal && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No matching bins</Text>
-            <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
-          </View>
-        )}
-        {principal && liveBins.status === 'ready' && filteredBins.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No matching bins</Text>
-            <Text style={styles.emptyCopy}>Try another search or status filter.</Text>
-          </View>
-        )}
-      </View>
-
-      <BinDetailModal
-        bin={
-          principal && liveBins.status === 'ready'
-            ? liveBins.bins.find((bin) => bin.id === selectedBin?.id) ?? null
-            : selectedBin
-        }
-        publicView={role === 'resident'}
-        onClose={() => setSelectedBin(null)}
-      />
     </AppPage>
   );
 }
@@ -558,6 +558,52 @@ const styles = StyleSheet.create({
   doneButtonText: {
     color: palette.white,
     fontSize: 14,
+    fontWeight: '800',
+  },
+  promptCard: {
+    padding: 24,
+    alignItems: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.white,
+    marginTop: 8,
+  },
+  promptIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.mint,
+    marginBottom: 12,
+  },
+  promptTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  promptCopy: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 18,
+    maxWidth: 320,
+  },
+  ctaButton: {
+    minHeight: 44,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: palette.forest,
+  },
+  ctaButtonText: {
+    color: palette.white,
+    fontSize: 12,
     fontWeight: '800',
   },
   pressed: {

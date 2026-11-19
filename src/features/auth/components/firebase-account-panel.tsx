@@ -75,7 +75,7 @@ export function FirebaseAccountPanel() {
       {session.status === 'loading' && (
         <View style={styles.statusRow}>
           <ActivityIndicator color={palette.forest} />
-          <Text style={styles.body}>Checking Firebase account...</Text>
+          <Text style={styles.body}>Checking account...</Text>
         </View>
       )}
 

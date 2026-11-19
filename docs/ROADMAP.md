@@ -114,7 +114,9 @@ Route assignment and collection workflows are implemented with typed repositorie
 - Security Rules enforce division-scoped supervisor creation and assignment, collector assigned-route restriction, lifecycle progression (`assigned` → `in_progress` → `completed`), and deny residents access to operational routes.
 - `staffProfiles/{docId}` enables human-friendly collector names in assignment dialogs, and provides a direct role-assignment mechanism as a fallback when Auth custom claims are absent. Document ID must be the user's Auth UID or email (not Auto-ID). Role matching is case-insensitive and accepts both `role` and `Role` field names. `FirebaseStaffProfileRepository` subscribes to the collection for real-time name resolution.
 - The owner has published the updated Firestore Security Rules and confirmed the live round-trip: a collector signed in, the app resolved their role from their staffProfile, and assigned routes appeared. All 17 local Firestore Emulator tests pass.
-- The signed-out preview experience retains interactive in-memory demo route workflows with visible `PREVIEW MODE` indicators.
+- All demo/mock data has been completely eliminated from the codebase (`demo-bins.ts` deleted, demo routes and demo resident reports removed). All screens operate 100% on live Firebase data (bins, routes, reports, staff profiles).
+- The manual "View as" role switcher modal has been removed. Role and navigation tabs are reactively derived from the user's authenticated identity. Unauthenticated visitors see public services and sign-in prompts; collectors see their route work; operations staff see triage and management.
+- Developer jargon ("Firestore", "Firebase") and technical status badges have been replaced with user-friendly language ("Live updates", "Offline mode: showing saved data") to reduce cognitive load on mobile devices.
 
 ### Deferred final-phase improvement — staff role-management workflow
 

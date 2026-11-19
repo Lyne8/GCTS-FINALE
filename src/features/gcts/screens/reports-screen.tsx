@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
@@ -16,6 +17,15 @@ import {
   type ResidentReportStatus,
 } from '@/features/gcts/state/demo-role-context';
 import { palette } from '@/features/gcts/palette';
+
+export type DisplayReport = {
+  id: string;
+  type: string;
+  location: string;
+  details: string;
+  status: ResidentReportStatus;
+  submittedLabel: string;
+};
 
 const filters = ['All reports', 'Received', 'Under review', 'Resolved'] as const;
 type ReportFilter = (typeof filters)[number];
@@ -34,7 +44,7 @@ const nextStatus: Partial<Record<ResidentReportStatus, ResidentReportStatus>> = 
 const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
 
 export function ReportsScreen() {
-  const { role: previewRole, residentReports, updateResidentReportStatus } = useDemoRole();
+  const { role: previewRole } = useDemoRole();
   const { session } = useFirebaseAuth();
   const [filter, setFilter] = useState<ReportFilter>('All reports');
   const [reportsState, setReportsState] = useState<ReportListState>({ status: 'loading' });
@@ -52,14 +62,11 @@ export function ReportsScreen() {
   }, [liveMode, principal]);
 
   const sourceReports = useMemo(() => {
-    if (!liveMode) {
-      return residentReports;
-    }
-    if (reportsState.status !== 'ready') {
+    if (!liveMode || reportsState.status !== 'ready') {
       return [];
     }
     return reportsState.reports.map(toDisplayReport);
-  }, [liveMode, residentReports, reportsState]);
+  }, [liveMode, reportsState]);
 
   const reports = useMemo(
     () =>
@@ -75,25 +82,43 @@ export function ReportsScreen() {
   if (session.status === 'loading') {
     return (
       <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Checking account status.">
-        <DataMessage message="Checking Firebase account..." />
+        <DataMessage message="Checking account..." />
       </AppPage>
     );
   }
   if (session.status === 'error') {
     return (
-      <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Firebase account status is unavailable.">
+      <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Account status is temporarily unavailable.">
         <DataMessage message={session.failure.message} />
+      </AppPage>
+    );
+  }
+
+  if (!principal) {
+    return (
+      <AppPage eyebrow="SERVICE DESK" title="Resident reports" subtitle="Staff triage and report follow-up.">
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIcon}>
+            <GctsIcon name="reports" size={24} />
+          </View>
+          <Text style={styles.emptyTitle}>Staff Sign In Required</Text>
+          <Text style={styles.emptyCopy}>
+            Reviewing and transitioning resident service reports is restricted to supervisors and city administrators. Sign in to continue.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.navigate('/settings')}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, { marginTop: 16 }]}>
+            <Text style={styles.primaryButtonText}>Sign In</Text>
+          </Pressable>
+        </View>
       </AppPage>
     );
   }
 
   async function advanceReport(report: ResidentReport) {
     const status = nextStatus[report.status];
-    if (!status) {
-      return;
-    }
-    if (!liveMode || !principal) {
-      updateResidentReportStatus(report.id, status);
+    if (!status || !liveMode || !principal) {
       return;
     }
 
@@ -133,10 +158,6 @@ export function ReportsScreen() {
       eyebrow="SERVICE DESK"
       title="Resident reports"
       subtitle="Review and follow up on collection requests from across the city.">
-      <DataMessage
-        message={liveMode ? 'LIVE FIRESTORE REPORTS' : 'PREVIEW MODE · reports are in memory'}
-        tone="info"
-      />
       {actionMessage && <DataMessage message={actionMessage} />}
       {liveMode && reportsState.status === 'loading' && (
         <DataMessage message="Loading reports..." />
@@ -151,7 +172,7 @@ export function ReportsScreen() {
         <DataMessage message={reportsState.failure.message} />
       )}
       {liveMode && reportsState.status === 'ready' && reportsState.source === 'cache' && (
-        <DataMessage message="Showing cached reports; they may be out of date." />
+        <DataMessage message="Offline mode: showing saved reports." />
       )}
       <View style={styles.summaryRow}>
         <SummaryCard value={String(sourceReports.length)} label="Total reports" icon="reports" />
@@ -501,6 +522,19 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 5,
     textAlign: 'center',
+  },
+  primaryButton: {
+    minHeight: 44,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: palette.forest,
+  },
+  primaryButtonText: {
+    color: palette.white,
+    fontSize: 12,
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.78,

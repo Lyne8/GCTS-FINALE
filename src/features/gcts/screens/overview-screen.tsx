@@ -1,16 +1,21 @@
-import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
+import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
 import { BinCard } from '@/features/gcts/components/bin-card';
 import { GctsIcon, type GctsIconName } from '@/features/gcts/components/gcts-icon';
-import { demoBins } from '@/features/gcts/data/demo-bins';
+import type { BinListState } from '@/features/gcts/data/bin-repository';
+import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
+import type { RouteListState } from '@/features/gcts/data/route-repository';
+import { FirebaseRouteRepository } from '@/features/gcts/data/firebase-route-repository';
+import type { ReportListState } from '@/features/gcts/data/service-report-repository';
+import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
 import { getBinUrgency } from '@/features/gcts/domain/bin';
 import { useDemoRole } from '@/features/gcts/state/demo-role-context';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
-
-const collectorBinIds = new Set(['central-market', 'mpanga-market', 'kabundaire-market']);
 
 const roleCopy = {
   admin: {
@@ -35,36 +40,160 @@ const roleCopy = {
   },
 } as const;
 
+const firebaseBinRepository = new FirebaseBinRepository();
+const firebaseRouteRepository = new FirebaseRouteRepository();
+const firebaseServiceReportRepository = new FirebaseServiceReportRepository();
+
 export function OverviewScreen() {
-  const { role, residentReports } = useDemoRole();
+  const { role: previewRole } = useDemoRole();
+  const { session } = useFirebaseAuth();
   const width = useResponsiveWidth();
   const wideWeb = Platform.OS === 'web' && width >= 1100;
+
+  const [binsState, setBinsState] = useState<BinListState>({ status: 'loading' });
+  const [routesState, setRoutesState] = useState<RouteListState>({ status: 'loading' });
+  const [reportsState, setReportsState] = useState<ReportListState>({ status: 'loading' });
+
+  const principal = session.status === 'signed-in' ? session.principal : null;
+  const role = principal?.role ?? previewRole;
   const wideAdmin = wideWeb && role === 'admin';
-  const visibleBins =
-    role === 'collector' ? demoBins.filter((bin) => collectorBinIds.has(bin.id)) : demoBins;
-  const dueBins = visibleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due');
-  const nearlyFullBins = visibleBins.filter(
+
+  useEffect(() => {
+    if (!principal) return;
+    return firebaseBinRepository.subscribe(principal, setBinsState);
+  }, [principal]);
+
+  useEffect(() => {
+    if (!principal) return;
+    if (principal.role === 'admin' || principal.role === 'supervisor' || principal.role === 'collector') {
+      return firebaseRouteRepository.subscribe(principal, setRoutesState);
+    }
+  }, [principal]);
+
+  useEffect(() => {
+    if (!principal) return;
+    if (principal.role === 'resident' || principal.role === 'admin' || principal.role === 'supervisor') {
+      return firebaseServiceReportRepository.subscribe(principal, setReportsState);
+    }
+  }, [principal]);
+
+  if (!principal) {
+    return (
+      <AppPage
+        eyebrow="CITY SERVICES"
+        title="Fort Portal City"
+        subtitle="Garbage Collection Tracker System (GCTS) public portal.">
+        <View style={styles.welcomeCard}>
+          <View style={styles.welcomeHeader}>
+            <View style={styles.welcomeIcon}>
+              <GctsIcon name="recycle" size={24} color={palette.white} />
+            </View>
+            <View style={styles.welcomeTitles}>
+              <Text style={styles.welcomeEyebrow}>PUBLIC PORTAL</Text>
+              <Text style={styles.welcomeTitle}>Smart Waste Collection</Text>
+            </View>
+          </View>
+          <Text style={styles.welcomeCopy}>
+            GCTS connects Fort Portal Tourism City residents with municipal waste management. Monitor collection progress, find nearby bins, and report collection issues directly to city operations.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.navigate('/settings')}
+            style={({ pressed }) => [styles.welcomeCta, pressed && styles.pressed]}>
+            <Text style={styles.welcomeCtaText}>Sign In / Register</Text>
+            <GctsIcon name="forward" size={16} color={palette.white} />
+          </Pressable>
+        </View>
+
+        <View style={styles.publicInfoGrid}>
+          <View style={styles.publicInfoCard}>
+            <View style={styles.publicInfoIcon}>
+              <GctsIcon name="bins" size={20} color={palette.forest} />
+            </View>
+            <Text style={styles.publicInfoTitle}>Public Bin Locations</Text>
+            <Text style={styles.publicInfoCopy}>
+              Registered residents can monitor fill levels and locations across Central and North Divisions.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.navigate('/bins')}
+              style={styles.publicInfoAction}>
+              <Text style={styles.publicInfoActionText}>Explore bins</Text>
+              <GctsIcon name="chevron" size={14} color={palette.forestLight} />
+            </Pressable>
+          </View>
+
+          <View style={styles.publicInfoCard}>
+            <View style={styles.publicInfoIcon}>
+              <GctsIcon name="report" size={20} color={palette.forest} />
+            </View>
+            <Text style={styles.publicInfoTitle}>Citizen Issue Reporting</Text>
+            <Text style={styles.publicInfoCopy}>
+              Report overflowing bins or missed collections and receive verified status updates as city teams resolve them.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.navigate('/resident')}
+              style={styles.publicInfoAction}>
+              <Text style={styles.publicInfoActionText}>Report an issue</Text>
+              <GctsIcon name="chevron" size={14} color={palette.forestLight} />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.residentNotice}>
+          <Text style={styles.residentNoticeEyebrow}>MUNICIPAL SERVICE DESK</Text>
+          <Text style={styles.residentNoticeTitle}>Collection schedules & notices</Text>
+          <Text style={styles.residentNoticeBody}>
+            Regular collections operate Monday through Saturday across Central and North Divisions. For municipal inquiries or staff onboarding, contact the Fort Portal City Council environment department.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.navigate('/settings')}
+            style={styles.residentAction}>
+            <Text style={styles.residentActionText}>Go to Account & Settings</Text>
+            <GctsIcon name="forward" size={16} color={palette.forest} />
+          </Pressable>
+        </View>
+      </AppPage>
+    );
+  }
+
+  const liveBins = binsState.status === 'ready' ? binsState.bins : [];
+  const liveRoutes = routesState.status === 'ready' ? routesState.routes : [];
+  const liveReports = reportsState.status === 'ready' ? reportsState.reports : [];
+
+  const dueBins = liveBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due');
+  const nearlyFullBins = liveBins.filter(
     (bin) => getBinUrgency(bin.fillLevelPercent) === 'nearly_full'
   );
-  const divisionSummaries = ['Central Division', 'North Division'].map((division) => {
-    const bins = visibleBins.filter((bin) => bin.division === division);
+
+  const divisions = Array.from(new Set(liveBins.map((b) => b.division))).filter(Boolean);
+  const divisionSummaries = (divisions.length > 0 ? divisions : ['Central Division', 'North Division']).map((division) => {
+    const bins = liveBins.filter((bin) => bin.division === division);
     const due = bins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due');
     return { name: division, total: bins.length, due: due.length };
   });
+
+  const activeRoutes = liveRoutes.filter((r) => r.status === 'in_progress' || r.status === 'assigned');
+  const primaryRoute = activeRoutes[0] ?? liveRoutes[0] ?? null;
+  const remainingStops = primaryRoute
+    ? primaryRoute.stops.filter((s) => s.status === 'pending').length
+    : 0;
 
   return (
     <AppPage {...roleCopy[role]}>
       <View style={[styles.statsGrid, wideWeb && styles.statsGridWide]}>
         <StatCard
           label={role === 'resident' ? 'Public bins' : 'Bins in view'}
-          value={String(visibleBins.length)}
+          value={binsState.status === 'ready' ? String(liveBins.length) : '—'}
           detail="Locations"
           icon="bins"
           wide={wideWeb}
         />
         <StatCard
           label={role === 'resident' ? 'Need attention' : 'Collection due'}
-          value={String(dueBins.length)}
+          value={binsState.status === 'ready' ? String(dueBins.length) : '—'}
           detail="Priority collection"
           tone="red"
           icon="priority"
@@ -72,7 +201,7 @@ export function OverviewScreen() {
         />
         <StatCard
           label="Nearly full"
-          value={String(nearlyFullBins.length)}
+          value={binsState.status === 'ready' ? String(nearlyFullBins.length) : '—'}
           detail="Review soon"
           tone="amber"
           icon="nearlyFull"
@@ -80,8 +209,16 @@ export function OverviewScreen() {
         />
         <StatCard
           label={role === 'resident' ? 'My reports' : 'Active routes'}
-          value={role === 'resident' ? String(residentReports.length) : '1'}
-          detail={role === 'resident' ? 'Submitted by you' : 'Assigned route'}
+          value={
+            role === 'resident'
+              ? reportsState.status === 'ready'
+                ? String(liveReports.length)
+                : '—'
+              : routesState.status === 'ready'
+                ? String(activeRoutes.length)
+                : '—'
+          }
+          detail={role === 'resident' ? 'Submitted by you' : 'In progress / assigned'}
           tone="green"
           icon={role === 'resident' ? 'report' : 'routes'}
           wide={wideWeb}
@@ -98,7 +235,7 @@ export function OverviewScreen() {
               </Text>
             </View>
             <View style={styles.snapshotTag}>
-              <Text style={styles.snapshotTagText}>2 divisions</Text>
+              <Text style={styles.snapshotTagText}>{divisionSummaries.length} divisions</Text>
             </View>
           </View>
           <View style={styles.divisionGrid}>
@@ -180,41 +317,80 @@ export function OverviewScreen() {
               <GctsIcon name="forward" size={16} color={palette.forest} />
             </Pressable>
           </View>
-        ) : (
+        ) : primaryRoute ? (
           <View style={[styles.routeCard, wideAdmin && styles.routeCardWide]}>
-          <View style={styles.routeCardTop}>
-            <View style={styles.routeIcon}>
-              <GctsIcon name="routes" size={22} color={palette.white} />
+            <View style={styles.routeCardTop}>
+              <View style={styles.routeIcon}>
+                <GctsIcon name="routes" size={22} color={palette.white} />
+              </View>
+              <View style={styles.routeSummary}>
+                <Text style={styles.routeEyebrow}>{primaryRoute.code}</Text>
+                <Text style={styles.routeName}>{primaryRoute.name}</Text>
+                <Text style={styles.routeMeta}>
+                  {primaryRoute.stops.length} stops · {primaryRoute.vehicleId}
+                </Text>
+              </View>
+              <View style={styles.liveTag}>
+                <View
+                  style={[
+                    styles.liveDot,
+                    {
+                      backgroundColor:
+                        primaryRoute.status === 'in_progress' ? '#4ADE80' : '#F1C06A',
+                    },
+                  ]}
+                />
+                <Text style={styles.liveTagText}>
+                  {primaryRoute.status === 'in_progress' ? 'IN PROGRESS' : 'ASSIGNED'}
+                </Text>
+              </View>
             </View>
-            <View style={styles.routeSummary}>
-              <Text style={styles.routeEyebrow}>DEMO ROUTE</Text>
-              <Text style={styles.routeName}>
-                {role === 'collector' ? 'My collection route' : 'Central Market Loop'}
+            <View style={styles.routeProgressTrack}>
+              <View
+                style={[
+                  styles.routeProgressFill,
+                  { width: `${primaryRoute.progressPercent}%` },
+                ]}
+              />
+            </View>
+            <View style={styles.routeFooter}>
+              <Text style={styles.routeProgressText}>
+                {remainingStops} of {primaryRoute.stops.length} stops remaining
               </Text>
-              <Text style={styles.routeMeta}>Central Division · 3 stops</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.navigate('/routes')}
+                style={styles.routeAction}>
+                <Text style={styles.routeActionText}>View route</Text>
+                <GctsIcon name="chevron" size={14} color={palette.white} />
+              </Pressable>
             </View>
-            <View style={styles.liveTag}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveTagText}>PREVIEW</Text>
+          </View>
+        ) : (
+          <View style={[styles.routeCard, wideAdmin && styles.routeCardWide, { backgroundColor: '#213B2E' }]}>
+            <View style={styles.routeCardTop}>
+              <View style={styles.routeIcon}>
+                <GctsIcon name="routes" size={22} color={palette.white} />
+              </View>
+              <View style={styles.routeSummary}>
+                <Text style={styles.routeEyebrow}>COLLECTION ROUTES</Text>
+                <Text style={styles.routeName}>No active routes</Text>
+                <Text style={styles.routeMeta}>All routes are completed or awaiting assignment</Text>
+              </View>
             </View>
-          </View>
-          <View style={styles.routeProgressTrack}>
-            <View style={styles.routeProgressFill} />
-          </View>
-          <View style={styles.routeFooter}>
-            <Text style={styles.routeProgressText}>2 of 3 stops remaining</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.navigate('/routes')}
-              style={styles.routeAction}>
-              <Text style={styles.routeActionText}>View route</Text>
-              <GctsIcon name="chevron" size={14} color={palette.white} />
-            </Pressable>
-          </View>
+            <View style={[styles.routeFooter, { marginTop: 14 }]}>
+              <Text style={styles.routeProgressText}>Check routes list for details</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.navigate('/routes')}
+                style={styles.routeAction}>
+                <Text style={styles.routeActionText}>View routes</Text>
+                <GctsIcon name="chevron" size={14} color={palette.white} />
+              </Pressable>
+            </View>
           </View>
         )}
       </View>
-
     </AppPage>
   );
 }
@@ -248,6 +424,108 @@ function StatCard({ label, value, detail, tone, icon, wide }: StatCardProps) {
 }
 
 const styles = StyleSheet.create({
+  welcomeCard: {
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: palette.forest,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  welcomeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  welcomeTitles: {
+    flex: 1,
+  },
+  welcomeEyebrow: {
+    color: '#B8D7C2',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  welcomeTitle: {
+    color: palette.white,
+    fontSize: 19,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  welcomeCopy: {
+    color: '#D8E8DD',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  welcomeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  welcomeCtaText: {
+    color: palette.white,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  publicInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 4,
+  },
+  publicInfoCard: {
+    flex: 1,
+    minWidth: 260,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.white,
+  },
+  publicInfoIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.mint,
+    marginBottom: 10,
+  },
+  publicInfoTitle: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  publicInfoCopy: {
+    color: palette.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  publicInfoAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  publicInfoActionText: {
+    color: palette.forestLight,
+    fontSize: 12,
+    fontWeight: '800',
+  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

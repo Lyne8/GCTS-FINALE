@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { router } from 'expo-router';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { AppPage } from '@/features/gcts/components/app-page';
@@ -20,7 +21,6 @@ import type {
   StaffProfileState,
 } from '@/features/gcts/data/staff-profile-repository';
 import type { CollectionRoute, RouteStatus } from '@/features/gcts/domain/route';
-import type { StaffProfile } from '@/features/gcts/domain/staff-profile';
 import { palette } from '@/features/gcts/palette';
 import { useDemoRole } from '@/features/gcts/state/demo-role-context';
 
@@ -43,31 +43,8 @@ const divisionNames: Record<string, string> = {
 const firebaseRouteRepository = new FirebaseRouteRepository();
 const firebaseStaffProfileRepository = new FirebaseStaffProfileRepository();
 
-const demoStaffProfiles: Record<string, StaffProfile> = {
-  'collector-1': {
-    uid: 'collector-1',
-    displayName: 'John Mugisha',
-    email: 'john.m@gcts.org',
-    role: 'collector',
-  },
-  'collector-2': {
-    uid: 'collector-2',
-    displayName: 'Sarah Atuhaire',
-    email: 'sarah.a@gcts.org',
-    role: 'collector',
-  },
-};
-const demoCollectorsList = Object.values(demoStaffProfiles);
-
 export function RoutesScreen() {
-  const {
-    role: previewRole,
-    demoRoutes,
-    assignDemoRouteCollector,
-    startDemoRoute,
-    recordDemoStopOutcome,
-    completeDemoRoute,
-  } = useDemoRole();
+  const { role: previewRole } = useDemoRole();
   const { session } = useFirebaseAuth();
 
   const [filter, setFilter] = useState<RouteFilter>('All routes');
@@ -104,7 +81,7 @@ export function RoutesScreen() {
     if (liveMode) {
       return staffState.status === 'ready' ? staffState.collectors : [];
     }
-    return demoCollectorsList;
+    return [];
   }, [liveMode, staffState]);
 
   const getCollectorDisplayName = (uid: string | null): string => {
@@ -112,24 +89,15 @@ export function RoutesScreen() {
     if (liveMode && staffState.status === 'ready' && staffState.profiles[uid]) {
       return staffState.profiles[uid].displayName;
     }
-    if (!liveMode && demoStaffProfiles[uid]) {
-      return demoStaffProfiles[uid].displayName;
-    }
     return 'Assigned Collector';
   };
 
   const sourceRoutes = useMemo(() => {
-    if (!liveMode) {
-      if (role === 'collector') {
-        return demoRoutes.filter((route) => route.collectorUid !== null);
-      }
-      return demoRoutes;
-    }
-    if (routesState.status !== 'ready') {
+    if (!liveMode || routesState.status !== 'ready') {
       return [];
     }
     return routesState.routes;
-  }, [liveMode, demoRoutes, routesState, role]);
+  }, [liveMode, routesState]);
 
   const filteredRoutes = useMemo(() => {
     return sourceRoutes.filter((route) => {
@@ -147,15 +115,40 @@ export function RoutesScreen() {
   if (session.status === 'loading') {
     return (
       <AppPage eyebrow="COLLECTION WORK" title="Routes" subtitle="Checking account status.">
-        <DataMessage message="Checking Firebase account..." />
+        <DataMessage message="Checking account..." />
       </AppPage>
     );
   }
 
   if (session.status === 'error') {
     return (
-      <AppPage eyebrow="COLLECTION WORK" title="Routes" subtitle="Firebase account status is unavailable.">
+      <AppPage eyebrow="COLLECTION WORK" title="Routes" subtitle="Account status is temporarily unavailable.">
         <DataMessage message={session.failure.message} />
+      </AppPage>
+    );
+  }
+
+  if (!principal) {
+    return (
+      <AppPage
+        eyebrow="COLLECTION WORK"
+        title="Operational routes"
+        subtitle="Route assignments and collection workflows.">
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIcon}>
+            <GctsIcon name="routes" size={24} color={palette.forestLight} />
+          </View>
+          <Text style={styles.emptyTitle}>Staff Sign In Required</Text>
+          <Text style={styles.emptyCopy}>
+            Daily collection routes and stop assignments are restricted to authorized collectors, supervisors, and city administrators. Sign in with your staff account to continue.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.navigate('/settings')}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, { marginTop: 16 }]}>
+            <Text style={styles.primaryButtonText}>Sign In</Text>
+          </Pressable>
+        </View>
       </AppPage>
     );
   }
@@ -181,14 +174,11 @@ export function RoutesScreen() {
   }
 
   async function handleStartRoute(routeId: string) {
+    if (!liveMode || !principal) return;
     setBusyAction(`start-${routeId}`);
     setActionMessage(null);
     try {
-      if (liveMode && principal) {
-        await firebaseRouteRepository.startRoute(principal, routeId);
-      } else {
-        startDemoRoute(routeId);
-      }
+      await firebaseRouteRepository.startRoute(principal, routeId);
     } catch (error) {
       setActionMessage(
         error instanceof RouteRepositoryError
@@ -205,21 +195,13 @@ export function RoutesScreen() {
     stopIndex: number,
     outcome: 'collected' | 'skipped'
   ) {
+    if (!liveMode || !principal) return;
     setBusyAction(`stop-${routeId}-${stopIndex}`);
     setActionMessage(null);
     try {
-      if (liveMode && principal) {
-        await firebaseRouteRepository.recordStopOutcome(principal, routeId, stopIndex, outcome, {
-          note: outcome === 'skipped' ? 'Skipped by collector' : null,
-        });
-      } else {
-        recordDemoStopOutcome(
-          routeId,
-          stopIndex,
-          outcome,
-          outcome === 'skipped' ? 'Skipped by collector' : undefined
-        );
-      }
+      await firebaseRouteRepository.recordStopOutcome(principal, routeId, stopIndex, outcome, {
+        note: outcome === 'skipped' ? 'Skipped by collector' : null,
+      });
     } catch (error) {
       setActionMessage(
         error instanceof RouteRepositoryError
@@ -232,14 +214,11 @@ export function RoutesScreen() {
   }
 
   async function handleCompleteRoute(routeId: string) {
+    if (!liveMode || !principal) return;
     setBusyAction(`complete-${routeId}`);
     setActionMessage(null);
     try {
-      if (liveMode && principal) {
-        await firebaseRouteRepository.completeRoute(principal, routeId);
-      } else {
-        completeDemoRoute(routeId);
-      }
+      await firebaseRouteRepository.completeRoute(principal, routeId);
     } catch (error) {
       setActionMessage(
         error instanceof RouteRepositoryError
@@ -252,18 +231,14 @@ export function RoutesScreen() {
   }
 
   async function handleAssignCollector() {
-    if (!assigningRoute) return;
+    if (!assigningRoute || !liveMode || !principal) return;
     const targetUid = selectedCollectorUid.trim();
     if (targetUid.length === 0) return;
 
     setBusyAction(`assign-${assigningRoute.id}`);
     setActionMessage(null);
     try {
-      if (liveMode && principal) {
-        await firebaseRouteRepository.assignCollector(principal, assigningRoute.id, targetUid);
-      } else {
-        assignDemoRouteCollector(assigningRoute.id, targetUid);
-      }
+      await firebaseRouteRepository.assignCollector(principal, assigningRoute.id, targetUid);
       setAssigningRoute(null);
       setSelectedCollectorUid('');
     } catch (error) {
@@ -282,11 +257,6 @@ export function RoutesScreen() {
       eyebrow="COLLECTION WORK"
       title="Routes"
       subtitle="Planned and active collection runs across the pilot divisions.">
-      <DataMessage
-        message={liveMode ? 'LIVE FIRESTORE ROUTES' : 'PREVIEW MODE · routes are in memory'}
-        tone="info"
-      />
-
       {actionMessage && <DataMessage message={actionMessage} />}
 
       {liveMode && routesState.status === 'loading' && (
@@ -302,7 +272,7 @@ export function RoutesScreen() {
         <DataMessage message={routesState.failure.message} />
       )}
       {liveMode && routesState.status === 'ready' && routesState.source === 'cache' && (
-        <DataMessage message="Showing cached routes; they may be out of date." />
+        <DataMessage message="Offline mode: showing saved routes." />
       )}
 
       <View style={styles.summaryRow}>
@@ -550,9 +520,7 @@ export function RoutesScreen() {
             <Text style={styles.modalSectionLabel}>Select Collector</Text>
             {availableCollectors.length === 0 ? (
               <Text style={styles.emptyCollectorListText}>
-                {liveMode
-                  ? 'No staff profiles found with role "collector". Please create collector profiles in Firebase Console.'
-                  : 'No collectors available.'}
+                No collector profiles found. Add collectors in staff management.
               </Text>
             ) : (
               <View style={styles.collectorList}>

@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { GctsIcon, type GctsIconName } from '@/features/gcts/components/gcts-icon';
-import { demoRoles, useDemoRole } from '@/features/gcts/state/demo-role-context';
+import { useAppRole } from '@/features/gcts/state/demo-role-context';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
 
@@ -36,10 +37,14 @@ type AppPageProps = PropsWithChildren<{
 }>;
 
 export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
-  const { role, setRolePickerVisible, setNotificationsVisible } = useDemoRole();
+  const { session } = useFirebaseAuth();
+  const { role, setNotificationsVisible } = useAppRole();
   const width = useResponsiveWidth();
   const wideWeb = Platform.OS === 'web' && width >= 900;
   const desktopAdmin = Platform.OS === 'web' && role === 'admin' && width >= 1100;
+
+  const isSignedIn = session.status === 'signed-in';
+  const userRole = isSignedIn ? session.principal.role : null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -78,18 +83,19 @@ export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Preview role: ${roleTitles[role]}. Change role`}
-                onPress={() => setRolePickerVisible(true)}
+                accessibilityLabel={isSignedIn ? `Account (${roleTitles[userRole ?? 'resident']})` : 'Sign in to account'}
+                onPress={() => router.navigate('/settings')}
                 style={({ pressed }) => [styles.roleButton, pressed && styles.pressed]}>
-                <View style={styles.avatar}>
-                  <GctsIcon name="person" size={17} color={palette.forest} />
+                <View style={[styles.avatar, !isSignedIn && styles.avatarSignedOut]}>
+                  <GctsIcon name="person" size={17} color={isSignedIn ? palette.forest : palette.muted} />
                 </View>
                 <Text style={[styles.roleButtonLabel, width > 0 && width < 500 && styles.roleButtonLabelCompact]}>
-                  {width > 0 && width < 500
-                    ? { admin: 'Admin', supervisor: 'Supervisor', collector: 'Collector', resident: 'Resident' }[role]
-                    : roleTitles[role]}
+                  {isSignedIn
+                    ? (width > 0 && width < 500
+                        ? { admin: 'Admin', supervisor: 'Supervisor', collector: 'Collector', resident: 'Resident' }[userRole ?? 'resident']
+                        : roleTitles[userRole ?? 'resident'])
+                    : 'Sign in'}
                 </Text>
-                <GctsIcon name="chevron" size={15} color={palette.muted} />
               </Pressable>
             </View>
           </View>
@@ -103,122 +109,67 @@ export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
           {children}
         </View>
       </ScrollView>
-
     </SafeAreaView>
   );
 }
 
 export function WorkspaceOverlays() {
-  const {
-    role,
-    setRole,
-    rolePickerVisible,
-    setRolePickerVisible,
-    notificationsVisible,
-    setNotificationsVisible,
-  } = useDemoRole();
+  const { role, notificationsVisible, setNotificationsVisible } = useAppRole();
   const notificationActionLabel =
     role === 'admin' ? 'View reports' : role === 'resident' ? 'My reports' : 'View routes';
 
   return (
-    <>
-      <Modal
-        animationType="fade"
-        transparent
-        visible={rolePickerVisible}
-        onRequestClose={() => setRolePickerVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close role selector"
-            onPress={() => setRolePickerVisible(false)}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.roleDialog}>
-            <Text style={styles.dialogEyebrow}>PREVIEW WORKSPACE</Text>
-            <Text style={styles.dialogTitle}>View as</Text>
-            <Text style={styles.dialogCopy}>Choose a role to preview its workspace.</Text>
-            {demoRoles.map((item) => {
-              const selected = item.value === role;
-              return (
-                <Pressable
-                  key={item.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    setRole(item.value);
-                    setRolePickerVisible(false);
-                  }}
-                  style={[styles.roleOption, selected && styles.roleOptionSelected]}>
-                  <View style={styles.roleOptionCopy}>
-                    <Text style={styles.roleOptionTitle}>{item.label}</Text>
-                    <Text style={styles.roleOptionDescription}>{item.description}</Text>
-                  </View>
-                  {selected && <Text style={styles.checkmark}>✓</Text>}
-                </Pressable>
-              );
-            })}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setRolePickerVisible(false)}
-              style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        animationType="fade"
-        transparent
-        visible={notificationsVisible}
-        onRequestClose={() => setNotificationsVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close notifications"
-            onPress={() => setNotificationsVisible(false)}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.notificationDialog}>
-            <View style={styles.notificationHeader}>
-              <View>
-                <Text style={styles.dialogEyebrow}>UPDATES</Text>
-                <Text style={styles.notificationTitle}>Notifications</Text>
-              </View>
-              <Text style={styles.notificationCount}>Recent activity</Text>
+    <Modal
+      animationType="fade"
+      transparent
+      visible={notificationsVisible}
+      onRequestClose={() => setNotificationsVisible(false)}>
+      <View style={styles.modalBackdrop}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close notifications"
+          onPress={() => setNotificationsVisible(false)}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.notificationDialog}>
+          <View style={styles.notificationHeader}>
+            <View>
+              <Text style={styles.dialogEyebrow}>UPDATES</Text>
+              <Text style={styles.notificationTitle}>Notifications</Text>
             </View>
-            {notifications.map(({ title, detail, time, icon }) => (
-              <View key={title} style={styles.notificationItem}>
-                <View style={styles.notificationItemIcon}>
-                  <GctsIcon name={icon} size={18} />
-                </View>
-                <View style={styles.notificationItemCopy}>
-                  <Text style={styles.notificationItemTitle}>{title}</Text>
-                  <Text style={styles.notificationItemDetail}>{detail}</Text>
-                  <Text style={styles.notificationItemTime}>{time}</Text>
-                </View>
-              </View>
-            ))}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setNotificationsVisible(false);
-                router.navigate(
-                  role === 'admin'
-                    ? '/reports'
-                    : role === 'resident'
-                      ? '/resident'
-                      : '/routes'
-                );
-              }}
-              style={styles.notificationAction}>
-              <Text style={styles.notificationActionText}>{notificationActionLabel}</Text>
-              <GctsIcon name="chevron" size={16} color={palette.forest} />
-            </Pressable>
+            <Text style={styles.notificationCount}>Recent activity</Text>
           </View>
+          {notifications.map(({ title, detail, time, icon }) => (
+            <View key={title} style={styles.notificationItem}>
+              <View style={styles.notificationItemIcon}>
+                <GctsIcon name={icon} size={18} />
+              </View>
+              <View style={styles.notificationItemCopy}>
+                <Text style={styles.notificationItemTitle}>{title}</Text>
+                <Text style={styles.notificationItemDetail}>{detail}</Text>
+                <Text style={styles.notificationItemTime}>{time}</Text>
+              </View>
+            </View>
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setNotificationsVisible(false);
+              router.navigate(
+                role === 'admin'
+                  ? '/reports'
+                  : role === 'resident'
+                    ? '/resident'
+                    : '/routes'
+              );
+            }}
+            style={styles.notificationAction}>
+            <Text style={styles.notificationActionText}>{notificationActionLabel}</Text>
+            <GctsIcon name="chevron" size={16} color={palette.forest} />
+          </Pressable>
         </View>
-      </Modal>
-    </>
+      </View>
+    </Modal>
   );
 }
 
@@ -292,15 +243,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   roleButton: {
-    minHeight: 42,
-    paddingHorizontal: 8,
+    minHeight: 40,
+    paddingHorizontal: 12,
     paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 8,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 24,
+    borderRadius: 22,
     backgroundColor: palette.white,
   },
   topBarActions: {
@@ -328,26 +279,27 @@ const styles = StyleSheet.create({
     backgroundColor: palette.red,
   },
   avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: palette.mint,
   },
+  avatarSignedOut: {
+    backgroundColor: '#EEF2EE',
+  },
   roleButtonLabel: {
     color: palette.ink,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    maxWidth: 108,
   },
   roleButtonLabelCompact: {
-    maxWidth: 66,
-    fontSize: 10,
+    fontSize: 11,
   },
   heading: {
-    marginTop: 30,
-    marginBottom: 18,
+    marginTop: 26,
+    marginBottom: 16,
   },
   eyebrow: {
     color: palette.forestLight,
@@ -358,16 +310,16 @@ const styles = StyleSheet.create({
   },
   title: {
     color: palette.ink,
-    fontSize: 30,
-    lineHeight: 36,
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '800',
-    marginTop: 5,
+    marginTop: 4,
   },
   subtitle: {
     color: palette.muted,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
     maxWidth: 620,
   },
   modalBackdrop: {
@@ -375,14 +327,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
     backgroundColor: 'rgba(18, 33, 27, 0.42)',
-  },
-  roleDialog: {
-    width: '100%',
-    maxWidth: 440,
-    alignSelf: 'center',
-    padding: 20,
-    borderRadius: 22,
-    backgroundColor: palette.white,
   },
   notificationDialog: {
     width: '100%',
@@ -468,65 +412,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1,
     fontWeight: '800',
-  },
-  dialogTitle: {
-    marginTop: 5,
-    color: palette.ink,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  dialogCopy: {
-    marginTop: 6,
-    marginBottom: 14,
-    color: palette.muted,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  roleOption: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 14,
-    marginTop: 8,
-  },
-  roleOptionSelected: {
-    borderColor: palette.forestLight,
-    backgroundColor: palette.mint,
-  },
-  roleOptionCopy: {
-    flex: 1,
-  },
-  roleOptionTitle: {
-    color: palette.ink,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  roleOptionDescription: {
-    color: palette.muted,
-    fontSize: 11,
-    marginTop: 3,
-  },
-  checkmark: {
-    color: palette.forest,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  cancelButton: {
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  cancelButtonText: {
-    color: palette.muted,
-    fontSize: 14,
-    fontWeight: '700',
   },
   pressed: {
     opacity: 0.75,
