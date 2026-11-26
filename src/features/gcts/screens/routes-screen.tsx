@@ -466,7 +466,7 @@ export function RoutesScreen() {
                     <Text style={styles.mapStopsHeading}>Route Sequence</Text>
                     {activeMapRoute.stops.map((stop, idx) => {
                       const bin = availableBins.find((b) => b.id === stop.binId);
-                      const urgency = bin ? getBinUrgency(bin.fillLevelPercent) : 'unknown';
+                      const urgency = bin ? getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) : 'unknown';
                       const fillToneColor =
                         stop.status === 'collected'
                           ? palette.green
@@ -602,7 +602,7 @@ export function RoutesScreen() {
                                   if (bin?.fillLevelPercent === null || bin?.fillLevelPercent === undefined) {
                                     return null;
                                   }
-                                  const urgency = getBinUrgency(bin.fillLevelPercent);
+                                  const urgency = getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt);
                                   const fillToneColor =
                                     stop.status === 'collected'
                                       ? palette.green

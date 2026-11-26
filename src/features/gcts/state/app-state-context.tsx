@@ -15,7 +15,7 @@ import type { GctsIconName } from '@/features/gcts/components/gcts-icon';
 import { FirebaseBinRepository } from '@/features/gcts/data/firebase-bin-repository';
 import { FirebaseRouteRepository } from '@/features/gcts/data/firebase-route-repository';
 import { FirebaseServiceReportRepository } from '@/features/gcts/data/firebase-service-report-repository';
-import type { WasteBin } from '@/features/gcts/domain/bin';
+import { isReadingStale, type WasteBin } from '@/features/gcts/domain/bin';
 import type { CollectionRoute } from '@/features/gcts/domain/route';
 import type { ServiceReport } from '@/features/gcts/domain/service-report';
 
@@ -77,9 +77,13 @@ function deriveNotifications(
   const readSet = new Set(readIds);
 
   if (role === 'admin' || role === 'supervisor') {
-    // 1. Critical bin fill breach (>= 85%)
+    // 1. Critical bin fill breach (>= 85% and reading not stale)
     for (const bin of bins) {
-      if (bin.fillLevelPercent !== null && bin.fillLevelPercent >= 85) {
+      if (
+        bin.fillLevelPercent !== null &&
+        bin.fillLevelPercent >= 85 &&
+        !isReadingStale(bin.lastReadingAt)
+      ) {
         items.push({
           id: `bin-critical-${bin.id}`,
           title: 'Critical bin level',
@@ -146,13 +150,14 @@ function deriveNotifications(
           });
         }
 
-        // Check if any stop on this route is currently >= 85%
+        // Check if any stop on this route is currently >= 85% (and not stale)
         const criticalStops = route.stops.filter((s) => {
           const matchedBin = bins.find((b) => b.id === s.binId);
           return (
             matchedBin &&
             matchedBin.fillLevelPercent !== null &&
-            matchedBin.fillLevelPercent >= 85
+            matchedBin.fillLevelPercent >= 85 &&
+            !isReadingStale(matchedBin.lastReadingAt)
           );
         });
         if (criticalStops.length > 0) {

@@ -12,7 +12,7 @@ type BinCardProps = {
 };
 
 export function BinCard({ bin, onPress, compact = false, publicView = false }: BinCardProps) {
-  const urgency = getBinUrgency(bin.fillLevelPercent);
+  const urgency = getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt);
   const urgencyStyles = urgencyStyle[urgency];
   const urgencyIcon: Record<typeof urgency, GctsIconName> = {
     collection_due: 'priority',

@@ -39,7 +39,7 @@ export function buildBinMarkersData(bins: WasteBin[], selectedBinId: string | nu
   return bins
     .filter((b) => typeof b.latitude === 'number' && typeof b.longitude === 'number')
     .map((b) => {
-      const urgency = getBinUrgency(b.fillLevelPercent);
+      const urgency = getBinUrgency(b.fillLevelPercent, b.lastReadingAt ?? null);
       let color = '#2E7D32';
       if (urgency === 'collection_due') color = '#D32F2F';
       else if (urgency === 'nearly_full') color = '#F59E0B';
@@ -62,7 +62,7 @@ export function buildRouteStopsData(routeStops: MapRouteStop[]) {
   return routeStops
     .filter((s) => typeof s.latitude === 'number' && typeof s.longitude === 'number')
     .map((s, index) => {
-      const urgency = getBinUrgency(s.fillLevelPercent ?? null);
+      const urgency = getBinUrgency(s.fillLevelPercent ?? null, null);
       let color = '#2E7D32';
       if (s.status === 'collected') {
         color = '#2E7D32';

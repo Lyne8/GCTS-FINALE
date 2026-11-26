@@ -163,15 +163,15 @@ export function OverviewScreen() {
   const liveRoutes = routesState.status === 'ready' ? routesState.routes : [];
   const liveReports = reportsState.status === 'ready' ? reportsState.reports : [];
 
-  const dueBins = liveBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due');
+  const dueBins = liveBins.filter((bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'collection_due');
   const nearlyFullBins = liveBins.filter(
-    (bin) => getBinUrgency(bin.fillLevelPercent) === 'nearly_full'
+    (bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'nearly_full'
   );
 
   const divisions = Array.from(new Set(liveBins.map((b) => b.division))).filter(Boolean);
   const divisionSummaries = (divisions.length > 0 ? divisions : ['Central Division', 'North Division']).map((division) => {
     const bins = liveBins.filter((bin) => bin.division === division);
-    const due = bins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due');
+    const due = bins.filter((bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'collection_due');
     return { name: division, total: bins.length, due: due.length };
   });
 

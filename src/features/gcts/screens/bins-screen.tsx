@@ -71,14 +71,14 @@ export function BinsScreen() {
   const roleBins = principal && liveBins.status === 'ready' ? liveBins.bins : [];
   const counts = {
     all: roleBins.length,
-    collection_due: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'collection_due')
+    collection_due: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'collection_due')
       .length,
-    nearly_full: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'nearly_full')
+    nearly_full: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'nearly_full')
       .length,
-    available: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent) === 'available').length,
+    available: roleBins.filter((bin) => getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === 'available').length,
   };
   const filteredBins = roleBins.filter((bin) => {
-    const matchesFilter = filter === 'all' || getBinUrgency(bin.fillLevelPercent) === filter;
+    const matchesFilter = filter === 'all' || getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt) === filter;
     const normalizedQuery = query.trim().toLowerCase();
     const matchesQuery =
       normalizedQuery.length === 0 ||
@@ -343,7 +343,7 @@ function BinDetailModal({ bin, publicView, isAdmin, onEdit, onClose }: BinDetail
   if (!bin) {
     return null;
   }
-  const urgency: BinUrgency = getBinUrgency(bin.fillLevelPercent);
+  const urgency: BinUrgency = getBinUrgency(bin.fillLevelPercent, bin.lastReadingAt);
 
   return (
     <Modal

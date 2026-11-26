@@ -83,9 +83,8 @@ export function parseFirebaseBin(id: string, value: unknown): WasteBin {
     division: divisionLabels[divisionId] ?? divisionId,
     fillLevelPercent:
       typeof fillLevelPercent === 'number' ? fillLevelPercent : null,
-    lastUpdatedLabel: readingAt
-      ? `Reading · ${readingAt.toLocaleString()}`
-      : 'No sensor reading',
+    lastReadingAt: readingAt,
+    lastUpdatedLabel: buildLastUpdatedLabel(readingAt),
     source: 'firestore',
     latitude,
     longitude,
@@ -94,4 +93,20 @@ export function parseFirebaseBin(id: string, value: unknown): WasteBin {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function buildLastUpdatedLabel(readingAt: Date | null): string {
+  if (readingAt === null) return 'No sensor reading';
+  const ageMs = Date.now() - readingAt.getTime();
+  const ageHours = ageMs / (1000 * 60 * 60);
+  if (ageHours < 1) {
+    const mins = Math.round(ageMs / (1000 * 60));
+    return `Reading · ${mins < 1 ? 'just now' : `${mins} min ago`}`;
+  }
+  if (ageHours < 24) {
+    const hrs = Math.floor(ageHours);
+    return `Reading · ${hrs}h ago`;
+  }
+  const days = Math.floor(ageHours / 24);
+  return `Stale · ${days}d ago`;
 }
