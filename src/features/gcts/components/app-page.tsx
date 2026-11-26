@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { useAppState } from '@/features/gcts/state/app-state-context';
-import { SettingsContent } from '@/features/gcts/screens/settings-screen';
+import { SettingsContent } from '@/features/gcts/components/settings-content';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
 
