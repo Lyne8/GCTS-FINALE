@@ -5,13 +5,18 @@ import { AppPage } from '@/features/gcts/components/app-page';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { palette } from '@/features/gcts/palette';
 import { FirebaseAccountPanel } from '@/features/auth/components/firebase-account-panel';
+import { useAppState } from '@/features/gcts/state/app-state-context';
 
 const divisions = ['All divisions', 'Central Division', 'North Division'];
 
 export function SettingsContent() {
   const [selectedDivision, setSelectedDivision] = useState(divisions[0]);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState(true);
+  const {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    priorityAlertsEnabled,
+    setPriorityAlertsEnabled,
+  } = useAppState();
 
   return (
     <>

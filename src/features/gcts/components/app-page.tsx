@@ -12,17 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useFirebaseAuth } from '@/features/auth/hooks/use-firebase-auth';
-import { GctsIcon, type GctsIconName } from '@/features/gcts/components/gcts-icon';
+import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { useAppState } from '@/features/gcts/state/app-state-context';
 import { SettingsContent } from '@/features/gcts/screens/settings-screen';
 import { palette } from '@/features/gcts/palette';
 import { useResponsiveWidth } from '@/features/gcts/hooks/use-responsive-width';
-
-const notifications: { title: string; detail: string; time: string; icon: GctsIconName }[] = [
-  { title: 'Collection due', detail: 'Central Market bin needs collection.', time: '4 min ago', icon: 'priority' },
-  { title: 'Route started', detail: 'Central Market Loop is in progress.', time: '18 min ago', icon: 'routes' },
-  { title: 'New resident report', detail: 'Overflowing bin reported at Mpanga Market.', time: '31 min ago', icon: 'report' },
-];
 
 type AppPageProps = PropsWithChildren<{
   eyebrow: string;
@@ -31,7 +25,7 @@ type AppPageProps = PropsWithChildren<{
 }>;
 
 export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
-  const { setNotificationsVisible, setSettingsVisible } = useAppState();
+  const { setNotificationsVisible, setSettingsVisible, unreadCount } = useAppState();
   const { session } = useFirebaseAuth();
   const width = useResponsiveWidth();
   const role = session.status === 'signed-in' ? session.principal.role : 'resident';
@@ -72,7 +66,7 @@ export function AppPage({ children, eyebrow, title, subtitle }: AppPageProps) {
                 onPress={() => setNotificationsVisible(true)}
                 style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
                 <GctsIcon name="notifications" size={20} color={palette.forest} />
-                <View style={styles.notificationBadge} />
+                {unreadCount > 0 && <View style={styles.notificationBadge} />}
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -105,6 +99,11 @@ export function WorkspaceOverlays() {
     setNotificationsVisible,
     settingsVisible,
     setSettingsVisible,
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    notificationsEnabled,
   } = useAppState();
 
   const notificationActionLabel =
@@ -130,20 +129,74 @@ export function WorkspaceOverlays() {
                 <Text style={styles.dialogEyebrow}>UPDATES</Text>
                 <Text style={styles.notificationTitle}>Notifications</Text>
               </View>
-              <Text style={styles.notificationCount}>Recent activity</Text>
+              {unreadCount > 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={markAllAsRead}
+                  style={({ pressed }) => [styles.markAllButton, pressed && styles.pressed]}>
+                  <Text style={styles.markAllButtonText}>Mark all as read</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.notificationCount}>
+                  {notificationsEnabled ? 'All caught up' : 'Paused'}
+                </Text>
+              )}
             </View>
-            {notifications.map(({ title, detail, time, icon }) => (
-              <View key={title} style={styles.notificationItem}>
-                <View style={styles.notificationItemIcon}>
-                  <GctsIcon name={icon} size={18} />
-                </View>
-                <View style={styles.notificationItemCopy}>
-                  <Text style={styles.notificationItemTitle}>{title}</Text>
-                  <Text style={styles.notificationItemDetail}>{detail}</Text>
-                  <Text style={styles.notificationItemTime}>{time}</Text>
-                </View>
+
+            {notifications.length === 0 ? (
+              <View style={styles.emptyNotifications}>
+                <GctsIcon name="available" size={32} color={palette.forestLight} />
+                <Text style={styles.emptyNotificationsTitle}>
+                  {notificationsEnabled ? 'No active alerts' : 'Notifications paused'}
+                </Text>
+                <Text style={styles.emptyNotificationsSubtitle}>
+                  {notificationsEnabled
+                    ? 'Key alerts like collection needs and assignments will appear here.'
+                    : 'Turn notifications back on in Settings to resume alerts.'}
+                </Text>
               </View>
-            ))}
+            ) : (
+              <ScrollView style={styles.notificationList} showsVerticalScrollIndicator={false}>
+                {notifications.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      markAsRead(item.id);
+                      setNotificationsVisible(false);
+                      if (item.actionRoute) {
+                        router.navigate(item.actionRoute);
+                      }
+                    }}
+                    style={({ pressed }) => [
+                      styles.notificationItem,
+                      !item.read && styles.notificationItemUnread,
+                      pressed && styles.pressed,
+                    ]}>
+                    <View
+                      style={[
+                        styles.notificationItemIcon,
+                        item.priority === 'high' && styles.notificationItemIconHigh,
+                      ]}>
+                      <GctsIcon
+                        name={item.icon}
+                        size={18}
+                        color={item.priority === 'high' ? palette.red : palette.forest}
+                      />
+                    </View>
+                    <View style={styles.notificationItemCopy}>
+                      <View style={styles.notificationItemTopRow}>
+                        <Text style={styles.notificationItemTitle}>{item.title}</Text>
+                        {!item.read && <View style={styles.unreadDot} />}
+                      </View>
+                      <Text style={styles.notificationItemDetail}>{item.detail}</Text>
+                      <Text style={styles.notificationItemTime}>{item.time}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+
             <Pressable
               accessibilityRole="button"
               onPress={() => {
@@ -361,6 +414,39 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: palette.mint,
   },
+  markAllButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: palette.mint,
+  },
+  markAllButtonText: {
+    color: palette.forest,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyNotifications: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 16,
+  },
+  emptyNotificationsTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+  emptyNotificationsSubtitle: {
+    color: palette.muted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  notificationList: {
+    maxHeight: 320,
+  },
   notificationItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -368,6 +454,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: palette.border,
+  },
+  notificationItemUnread: {
+    backgroundColor: 'rgba(235, 245, 240, 0.4)',
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    borderRadius: 8,
   },
   notificationItemIcon: {
     width: 36,
@@ -377,8 +469,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#F1F5F1',
   },
+  notificationItemIconHigh: {
+    backgroundColor: '#FDEEE9',
+  },
   notificationItemCopy: {
     flex: 1,
+  },
+  notificationItemTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.forest,
   },
   notificationItemTitle: {
     color: palette.ink,
