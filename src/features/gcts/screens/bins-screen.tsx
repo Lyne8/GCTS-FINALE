@@ -11,6 +11,7 @@ import {
 
 import { AppPage } from '@/features/gcts/components/app-page';
 import { BinCard } from '@/features/gcts/components/bin-card';
+import { BinEditorModal } from '@/features/gcts/components/bin-editor-modal';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { GctsMapView } from '@/features/gcts/components/gcts-map-view';
 import type { BinListState } from '@/features/gcts/data/bin-repository';
@@ -43,6 +44,8 @@ export function BinsScreen() {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
   const [query, setQuery] = useState('');
   const [selectedBin, setSelectedBin] = useState<WasteBin | null>(null);
+  const [binEditorVisible, setBinEditorVisible] = useState(false);
+  const [binToEdit, setBinToEdit] = useState<WasteBin | null>(null);
   const [liveBins, setLiveBins] = useState<BinListState>({ status: 'loading' });
   const principal = session.status === 'signed-in' ? session.principal : null;
 
@@ -186,35 +189,48 @@ export function BinsScreen() {
               </Text>
               <Text style={styles.listCount}>{filteredBins.length} shown</Text>
             </View>
-            <View style={styles.segmentContainer}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="List view"
-                accessibilityState={{ selected: viewMode === 'list' }}
-                onPress={() => setViewMode('list')}
-                style={[styles.segmentButton, viewMode === 'list' && styles.segmentButtonActive]}>
-                <Text
-                  style={[
-                    styles.segmentButtonText,
-                    viewMode === 'list' && styles.segmentButtonTextActive,
-                  ]}>
-                  List
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Map view"
-                accessibilityState={{ selected: viewMode === 'map' }}
-                onPress={() => setViewMode('map')}
-                style={[styles.segmentButton, viewMode === 'map' && styles.segmentButtonActive]}>
-                <Text
-                  style={[
-                    styles.segmentButtonText,
-                    viewMode === 'map' && styles.segmentButtonTextActive,
-                  ]}>
-                  Map
-                </Text>
-              </Pressable>
+            <View style={styles.listHeaderActions}>
+              {role === 'admin' && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setBinToEdit(null);
+                    setBinEditorVisible(true);
+                  }}
+                  style={({ pressed }) => [styles.addBinButton, pressed && styles.pressed]}>
+                  <Text style={styles.addBinButtonText}>+ Add Bin</Text>
+                </Pressable>
+              )}
+              <View style={styles.segmentContainer}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="List view"
+                  accessibilityState={{ selected: viewMode === 'list' }}
+                  onPress={() => setViewMode('list')}
+                  style={[styles.segmentButton, viewMode === 'list' && styles.segmentButtonActive]}>
+                  <Text
+                    style={[
+                      styles.segmentButtonText,
+                      viewMode === 'list' && styles.segmentButtonTextActive,
+                    ]}>
+                    List
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Map view"
+                  accessibilityState={{ selected: viewMode === 'map' }}
+                  onPress={() => setViewMode('map')}
+                  style={[styles.segmentButton, viewMode === 'map' && styles.segmentButtonActive]}>
+                  <Text
+                    style={[
+                      styles.segmentButtonText,
+                      viewMode === 'map' && styles.segmentButtonTextActive,
+                    ]}>
+                    Map
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </View>
 
@@ -256,7 +272,25 @@ export function BinsScreen() {
                 : selectedBin
             }
             publicView={role === 'resident'}
+            isAdmin={role === 'admin'}
+            onEdit={(bin) => {
+              setSelectedBin(null);
+              setBinToEdit(bin);
+              setBinEditorVisible(true);
+            }}
             onClose={() => setSelectedBin(null)}
+          />
+
+          <BinEditorModal
+            visible={binEditorVisible}
+            binToEdit={binToEdit}
+            onClose={() => {
+              setBinEditorVisible(false);
+              setBinToEdit(null);
+            }}
+            onSaved={() => {
+              // live subscription auto updates
+            }}
           />
         </>
       )}
@@ -300,10 +334,12 @@ function SummaryCard({ value, label, tone }: SummaryCardProps) {
 type BinDetailModalProps = {
   bin: WasteBin | null;
   publicView: boolean;
+  isAdmin?: boolean;
+  onEdit?: (bin: WasteBin) => void;
   onClose: () => void;
 };
 
-function BinDetailModal({ bin, publicView, onClose }: BinDetailModalProps) {
+function BinDetailModal({ bin, publicView, isAdmin, onEdit, onClose }: BinDetailModalProps) {
   if (!bin) {
     return null;
   }
@@ -331,13 +367,24 @@ function BinDetailModal({ bin, publicView, onClose }: BinDetailModalProps) {
               <Text style={styles.sheetTitle}>{bin.name}</Text>
               <Text style={styles.sheetMeta}>{bin.division}</Text>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close bin details"
-              onPress={onClose}
-              style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>×</Text>
-            </Pressable>
+            <View style={styles.sheetActionGroup}>
+              {isAdmin && onEdit && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit bin"
+                  onPress={() => onEdit(bin)}
+                  style={styles.editBinHeaderButton}>
+                  <Text style={styles.editBinHeaderButtonText}>Edit</Text>
+                </Pressable>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close bin details"
+                onPress={onClose}
+                style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>×</Text>
+              </Pressable>
+            </View>
           </View>
           <BinCard bin={bin} publicView={publicView} />
           <View style={styles.detailInfo}>
@@ -452,6 +499,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 5,
     marginBottom: 12,
+  },
+  listHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addBinButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: palette.mint,
+  },
+  addBinButtonText: {
+    color: palette.forest,
+    fontSize: 11,
+    fontWeight: '800',
   },
   segmentContainer: {
     flexDirection: 'row',
@@ -591,6 +654,22 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 12,
     marginTop: 3,
+  },
+  sheetActionGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editBinHeaderButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: palette.mint,
+  },
+  editBinHeaderButtonText: {
+    color: palette.forest,
+    fontSize: 12,
+    fontWeight: '800',
   },
   closeButton: {
     width: 34,

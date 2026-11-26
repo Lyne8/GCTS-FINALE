@@ -5,6 +5,7 @@ import { AppPage } from '@/features/gcts/components/app-page';
 import { GctsIcon } from '@/features/gcts/components/gcts-icon';
 import { palette } from '@/features/gcts/palette';
 import { FirebaseAccountPanel } from '@/features/auth/components/firebase-account-panel';
+import { StaffManagementPanel } from '@/features/gcts/components/staff-management-panel';
 import { useAppState } from '@/features/gcts/state/app-state-context';
 
 const divisions = ['All divisions', 'Central Division', 'North Division'];
@@ -12,6 +13,7 @@ const divisions = ['All divisions', 'Central Division', 'North Division'];
 export function SettingsContent() {
   const [selectedDivision, setSelectedDivision] = useState(divisions[0]);
   const {
+    role,
     notificationsEnabled,
     setNotificationsEnabled,
     priorityAlertsEnabled,
@@ -24,6 +26,13 @@ export function SettingsContent() {
         <Text style={styles.groupTitle}>Account</Text>
         <FirebaseAccountPanel />
       </View>
+
+      {role === 'admin' && (
+        <View style={styles.group}>
+          <Text style={styles.groupTitle}>Administration</Text>
+          <StaffManagementPanel />
+        </View>
+      )}
 
       <View style={styles.group}>
         <Text style={styles.groupTitle}>Workspace</Text>

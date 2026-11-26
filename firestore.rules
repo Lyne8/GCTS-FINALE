@@ -344,16 +344,35 @@ service cloud.firestore {
     match /bins/{binId} {
       allow get, list: if canReadReportableBin(resource.data);
 
-      // Allow authorized smart dustbin hardware (ESP32) to update telemetry via Firestore REST API
-      allow update: if resource.data.deviceKey is string
-                    && request.resource.data.deviceKey == resource.data.deviceKey
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['fillLevelPercent', 'lastReadingAt', 'deviceKey'])
-                    && (request.resource.data.fillLevelPercent is int || request.resource.data.fillLevelPercent is float)
-                    && request.resource.data.fillLevelPercent >= 0
-                    && request.resource.data.fillLevelPercent <= 100;
+      // Allow City Administrators to create and update bins
+      allow create: if isAdmin()
+                    && request.resource.data.code is string
+                    && request.resource.data.code.size() > 0
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.divisionId is string
+                    && request.resource.data.divisionId.size() > 0
+                    && request.resource.data.reportingEnabled is bool;
 
-      allow create, delete: if false;
+      allow update: if (
+                      isAdmin()
+                      && request.resource.data.code is string
+                      && request.resource.data.name is string
+                      && request.resource.data.divisionId is string
+                      && request.resource.data.reportingEnabled is bool
+                    )
+                    || (
+                      // Allow authorized smart dustbin hardware (ESP32) to update telemetry via Firestore REST API
+                      resource.data.deviceKey is string
+                      && request.resource.data.deviceKey == resource.data.deviceKey
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['fillLevelPercent', 'lastReadingAt', 'deviceKey'])
+                      && (request.resource.data.fillLevelPercent is int || request.resource.data.fillLevelPercent is float)
+                      && request.resource.data.fillLevelPercent >= 0
+                      && request.resource.data.fillLevelPercent <= 100
+                    );
+
+      allow delete: if isAdmin();
     }
 
     match /staffProfiles/{docId} {

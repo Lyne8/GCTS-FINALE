@@ -1,9 +1,13 @@
 import { FirebaseError } from 'firebase/app';
 import {
   collection,
+  deleteDoc,
+  doc,
   limit,
   onSnapshot,
   query,
+  setDoc,
+  updateDoc,
   where,
   type DocumentData,
   type Query,
@@ -18,6 +22,8 @@ import {
   BinRepositoryError,
   type BinListState,
   type BinRepository,
+  type CreateBinInput,
+  type UpdateBinInput,
 } from '@/features/gcts/data/bin-repository';
 import {
   FirebaseConfigurationError,
@@ -66,6 +72,59 @@ export class FirebaseBinRepository implements BinRepository {
       onStateChange(toListState(error));
       return () => {};
     }
+  }
+
+  async createBin(input: CreateBinInput): Promise<string> {
+    const firestore = getFirebaseFirestore();
+    const docId = input.id?.trim() || input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const docRef = doc(firestore, 'bins', docId);
+
+    const data: Record<string, unknown> = {
+      code: input.code.trim(),
+      name: input.name.trim(),
+      divisionId: input.divisionId.trim(),
+      reportingEnabled: true,
+    };
+
+    if (typeof input.latitude === 'number' && Number.isFinite(input.latitude)) {
+      data.latitude = input.latitude;
+    }
+    if (typeof input.longitude === 'number' && Number.isFinite(input.longitude)) {
+      data.longitude = input.longitude;
+    }
+    if (input.deviceKey && input.deviceKey.trim().length > 0) {
+      data.deviceKey = input.deviceKey.trim();
+    }
+
+    await setDoc(docRef, data, { merge: true });
+    return docId;
+  }
+
+  async updateBin(id: string, input: UpdateBinInput): Promise<void> {
+    const firestore = getFirebaseFirestore();
+    const docRef = doc(firestore, 'bins', id);
+
+    const data: Record<string, unknown> = {};
+    if (input.code) data.code = input.code.trim();
+    if (input.name) data.name = input.name.trim();
+    if (input.divisionId) data.divisionId = input.divisionId.trim();
+    if (typeof input.latitude === 'number' && Number.isFinite(input.latitude)) {
+      data.latitude = input.latitude;
+    }
+    if (typeof input.longitude === 'number' && Number.isFinite(input.longitude)) {
+      data.longitude = input.longitude;
+    }
+    if (input.deviceKey !== undefined) {
+      data.deviceKey = input.deviceKey.trim();
+    }
+
+    await updateDoc(docRef, data);
+  }
+
+  async deleteBin(id: string): Promise<void> {
+    const firestore = getFirebaseFirestore();
+    const docRef = doc(firestore, 'bins', id);
+    await deleteDoc(docRef);
   }
 }
 

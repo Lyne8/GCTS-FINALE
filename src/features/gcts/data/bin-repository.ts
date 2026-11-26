@@ -28,9 +28,31 @@ export type BinListState =
   | { status: 'offline'; message: string }
   | { status: 'error'; failure: BinRepositoryFailure };
 
+export type CreateBinInput = {
+  id?: string;
+  code: string;
+  name: string;
+  divisionId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  deviceKey?: string;
+};
+
+export type UpdateBinInput = {
+  code?: string;
+  name?: string;
+  divisionId?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  deviceKey?: string;
+};
+
 export interface BinRepository {
   subscribe(
     principal: AuthPrincipal,
     onStateChange: (state: BinListState) => void
   ): () => void;
+  createBin(input: CreateBinInput): Promise<string>;
+  updateBin(id: string, input: UpdateBinInput): Promise<void>;
+  deleteBin(id: string): Promise<void>;
 }

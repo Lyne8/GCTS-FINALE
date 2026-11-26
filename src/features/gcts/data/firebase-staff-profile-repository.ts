@@ -1,9 +1,17 @@
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  setDoc,
+} from 'firebase/firestore';
 
 import {
   parseStaffProfile,
 } from '@/features/gcts/data/staff-profile-mapper';
 import type {
+  SaveStaffInput,
   StaffProfileRepository,
   StaffProfileState,
 } from '@/features/gcts/data/staff-profile-repository';
@@ -58,5 +66,30 @@ export class FirebaseStaffProfileRepository implements StaffProfileRepository {
         });
       }
     );
+  }
+
+  async saveStaffProfile(input: SaveStaffInput): Promise<void> {
+    const firestore = getFirebaseFirestore();
+    const cleanEmail = input.email.trim().toLowerCase();
+    const docRef = doc(firestore, 'staffProfiles', cleanEmail);
+
+    await setDoc(
+      docRef,
+      {
+        displayName: input.displayName.trim(),
+        email: cleanEmail,
+        role: input.role,
+        ...(input.divisionIds && input.divisionIds.length > 0
+          ? { divisionIds: input.divisionIds }
+          : { divisionIds: [] }),
+      },
+      { merge: true }
+    );
+  }
+
+  async deleteStaffProfile(docId: string): Promise<void> {
+    const firestore = getFirebaseFirestore();
+    const docRef = doc(firestore, 'staffProfiles', docId);
+    await deleteDoc(docRef);
   }
 }
